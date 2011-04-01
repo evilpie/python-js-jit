@@ -1,0 +1,5 @@
+Pretty naive try to compile javascript to native code, with python.
+
+Credits:
+http://code.google.com/p/pynarcissus/
+http://codeflow.org/entries/2009/jul/31/pyasm-python-x86-assembler/
