@@ -663,9 +663,8 @@ def main():
 
 
     code = """
-        x = 1;
-
-        typeof x
+        x = [1, 2, 3]
+        typeof x[0]
     """
     runtime = Runtime()
     compiler = Compiler(asm, runtime)

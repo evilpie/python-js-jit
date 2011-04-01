@@ -89,8 +89,6 @@ class Runtime:
                 except:
                     return object_value(self.floats['NaN'])
 
-
-
         if obj.isFloat():
             return v
 

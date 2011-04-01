@@ -8,8 +8,9 @@
     :license: GNU AGPL v3 or later, see LICENSE for more details.
 """
 
-from ctypes import cast, CFUNCTYPE, c_char, c_long, c_void_p, POINTER, windll
+from ctypes import cast, CFUNCTYPE, c_int, c_char, c_long, c_void_p, POINTER, windll
 import ctypes
+import os
 
 def iterable(obj):
     if isinstance(obj, list):
@@ -46,29 +47,38 @@ class Executable(object):
     def __init__(self, buffer, restype=None, argtypes=()):
         self.buffer = buffer
         self.size = len(buffer)
-        
-        VirtualAlloc = ctypes.windll.kernel32.VirtualAlloc
-        VirtualAlloc.argtypes = [c_void_p, c_long, c_long, c_long]
-        VirtualAlloc.restype = c_void_p
 
-        self.address = VirtualAlloc(0, self.size, 0x1000, 0x40)
+        if os.name == 'nt':
+            VirtualAlloc = ctypes.windll.kernel32.VirtualAlloc
+            VirtualAlloc.argtypes = [c_void_p, c_long, c_long, c_long]
+            VirtualAlloc.restype = c_void_p
 
-        self.ptr = cast(c_void_p(self.address), POINTER(c_char*self.size))
+            self.address = VirtualAlloc(0, self.size, 0x1000, 0x40)
+        else:
+            self.address = pythonapi.valloc(self.size)
+            pythonapi.mprotect(self.address, self.size, read_write_execute)
 
-        #pythonapi.mprotect(self.address, self.size, read_write_execute)
+        self.ptr = cast(c_void_p(self.address), POINTER(c_char * self.size))
 
         self.ptr.contents[:] = buffer
         functype = CFUNCTYPE(restype, *argtypes)
         self.fptr = functype(self.address)
-        
+
 
     def __call__(self, *args):
         return self.fptr(*args)
 
     def __del__(self):
-        #pythonapi.mprotect(self.address, self.size, read_write)
-        #pythonapi.free(self.address)
-        pass
+        if os.name == 'nt':
+            VirtualFree = ctypes.windll.kernel32.VirtualFree
+            VirtualFree.argtypes = [c_void_p, c_long, c_long]
+            VirtualFree.restype = c_int
+
+            VirtualFree(self.address, self.size, 0x8000)
+        else:
+            pythonapi.mprotect(self.address, self.size, read_write)
+            pythonapi.free(self.address)
+
 
 def compile(instructions, restype=None, argtypes=()):
     offset = 0
@@ -76,7 +86,7 @@ def compile(instructions, restype=None, argtypes=()):
         instruction.offset = offset
         bytes = instruction.compile()
         offset += len(bytes)
-        
+
     buffer = ''.join(
         instruction.compile() for instruction in instructions
     )
