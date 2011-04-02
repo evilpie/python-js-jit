@@ -198,7 +198,7 @@ class Compiler:
 
             @function(c_int, BoxedInt)
             def unary_plus(lhs):
-                return self.rt.toNumber(lhs)
+                return self.rt.toNumber(lhs).value
 
             self.box(lhs, eax)
             self.assembler.push(eax)
@@ -388,26 +388,26 @@ class Compiler:
         else_part = Label('else part')
         end = Label('end')
 
-        @function(c_int, BoxedInt)
-        def hook(condition):
-            print 'stub hook'
-            return true_value #todo
-
         if type == 'int':
             self.assembler.cmp(eax, 0)
             self.assembler.jne(if_part)
         elif type == 'float':
-            raise NotImplementedError('float hook')
+            raise NotImplementedError('float conditional')
         elif type == 'bool':
             self.assembler.test(eax, 1)
             self.assembler.jne(if_part)
         elif type == 'null':
-            pass # always else
+            pass # always else_node
         elif type == 'object':
             self.assembler.jmp(if_part) # {} ? true : false => always true
         elif type == 'string':
-            raise NotImplementedError('str hook')
+            raise NotImplementedError('str conditional')
         else:
+
+            @function(c_int, BoxedInt)
+            def stub_conditional(condition):
+                print 'stub conditional'
+                return self.rt.toBoolean(condition).value
 
             test = Label('test')
             stub = Label('stub')
@@ -432,7 +432,7 @@ class Compiler:
             #stub
             self.assembler.add_(stub)
             self.assembler.push(eax)
-            self.assembler.mov(ebx, hook)
+            self.assembler.mov(ebx, stub_conditional)
             self.assembler.call(ebx)
             self.assembler.add(esp, 4)
             self.assembler.jmp(test)
@@ -663,8 +663,7 @@ def main():
 
 
     code = """
-        x = [1, 2, 3]
-        typeof x[0]
+        typeof null
     """
     runtime = Runtime()
     compiler = Compiler(asm, runtime)

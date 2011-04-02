@@ -161,22 +161,31 @@ def new_shape(clas):
     return obj
 
 def integer_value(int):
+    return boxed_integer(int).value
+
+def boxed_integer(int):
     b = BoxedInt()
     b.setInteger(int)
-    return b.value
+    return b
 
 def object_value(obj):
+    return boxed_object(obj).value
+
+def boxed_object(obj):
     b = BoxedInt()
     if isinstance(obj, Structure):
         b.setObject(addressof(obj))
     else:
         b.setObject(obj)
-    return b.value
+    return b
 
 def bool_value(bool):
+    return boxed_bool(bool).value
+
+def boxed_bool(boolean):
     b = BoxedInt()
-    b.setBool(bool)
-    return b.value
+    b.setBool(bool(boolean))
+    return b
 
 object_types = dict(
     # primitives

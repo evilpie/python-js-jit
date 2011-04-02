@@ -1,4 +1,5 @@
 from data import *
+import math
 
 ecma_type = dict(undefined = 0, null = 1, boolean = 2, string = 3, number = 4, object = 5)
 
@@ -24,7 +25,7 @@ class Runtime:
             return self.strings['number']
         elif v.isPrimitive():
             if v.isNull():
-                return self.strings['object']
+                return self.strings['null'] # see http://wiki.ecmascript.org/doku.php?id=proposals:typeof
             elif v.isUndefined():
                 return self.strings['undefined']
             elif v.isBool():
@@ -69,11 +70,11 @@ class Runtime:
 
     def toNumber(self, v):
         if v.isUndefined():
-            return object_value(self.floats['NaN'])
+            return boxed_object(self.floats['NaN'])
         if v.isNull():
-            return integer_value(0)
+            return boxed_integer(0)
         if v.isBool():
-            return integer_value(0 + v.getBool())
+            return boxed_integer(0 + v.getBool())
         if v.isInteger():
             return v
         obj = v.getObject()
@@ -81,13 +82,13 @@ class Runtime:
             str = obj.to(PrimitiveString).str
             try:
                 v = int(str)
-                return integer_value(v)
+                return boxed_integer(v)
             except:
                 try:
                     v = float(str)
-                    return object_value(new_float(v))
+                    return boxed_object(new_float(v))
                 except:
-                    return object_value(self.floats['NaN'])
+                    return boxed_object(self.floats['NaN'])
 
         if obj.isFloat():
             return v
@@ -98,26 +99,27 @@ class Runtime:
 
     def toBoolean(self, v):
         if v.isUndefined():
-            return BoxedInt(false_value)
+            return boxed_bool(False)
         if v.isNull():
-            return BoxedInt(false_value)
+            return boxed_bool(False)
         if v.isBool():
             return v
         if v.isInteger():
-            return v != 0
+            return boxed_bool(v.getInteger())
 
         obj = v.getObject()
         if obj.isObject():
-            return BoxedInt(true_value)
+            return boxed_bool(True)
         if obj.isString():
             if len(obj.to(PrimitiveString).str):
-                return BoxedInt(true_value)
-            return BoxedInt(false_value)
+                return boxed_bool(True)
+            return boxed_bool(False)
 
         assert obj.isFloat()
-        if bool(obj.to(PrimitiveFloat).value):
-            return BoxedInt(true_value)
-        return BoxedInt(false_value)
+        float_value = obj.to(PrimitiveFloat).value
+        if math.isnan(float_value):
+            return boxed_bool(False)
+        return boxed_bool(float_value)
 
 
 
@@ -142,7 +144,7 @@ class Runtime:
             if ltype == ecma_type['null']:
                 return True
             if ltype == ecma_type['number']:
-                return self.numberConvert(lvalue) == self.numberConvert(rvalue)
+                return self.numberConvert(left) == self.numberConvert(right)
 
             if ltype == ecma_type['string']:
                 lvalue = left.getObject().to(PrimitiveString).str
