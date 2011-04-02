@@ -74,9 +74,7 @@ def test(inst, target, source):
             inst.modrm(3, target, source)
 
         if isinstance(source, int):
-
             inst.chr(0xf7)
-            inst.modrm(3, 7, target)
-
+            inst.modrm(3, 0, target)
             inst.pack('i', source)
 

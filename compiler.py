@@ -95,6 +95,8 @@ class Compiler:
         self.assembler.pop(ebp)
         self.assembler.ret()
 
+        print self.assembler.assembler
+
         return self.assembler.compile()
 
     def compile_node(self, node):
@@ -438,7 +440,6 @@ class Compiler:
             self.assembler.add_(end)
 
             self.frame.push('bool', ebx)
-
         else:
 
             @function(c_int, BoxedInt, BoxedInt)
@@ -446,6 +447,30 @@ class Compiler:
                 print 'stub eq'
                 return 1 if self.rt.equality(lhs, rhs) else 0
 
+            stub = Label('stub')
+            end = Label('end')
+            emit_inline_cmp = False
+
+            if lhs == 'unknown' and rhs in ['int', 'unknown']:
+                emit_inline_cmp = True
+                self.jump_not_int(ebx, stub)
+
+            if rhs == 'unknown' and lhs in ['int', 'unknown']:
+                emit_inline_cmp = True
+                self.jump_not_int(ecx, stub)
+
+            if emit_inline_cmp:
+                if lhs == 'unknown':
+                    self.unbox(ebx)
+                if rhs == 'unknown':
+                    self.unbox(ecx)
+                self.assembler.mov(eax, 1)
+                self.assembler.cmp(ecx, ebx)
+                self.assembler.je(end)
+                self.assembler.mov(eax, 0)
+                self.assembler.jmp(end)
+
+            self.assembler.add_(stub)
             self.box(rhs, ecx)
             self.assembler.push(ecx)
             self.box(lhs, ebx)
@@ -453,6 +478,7 @@ class Compiler:
             self.assembler.mov(eax, eq)
             self.assembler.call(eax)
             self.assembler.add(esp, 8)
+            self.assembler.add_(end)
 
             self.frame.push('bool', eax)
 
@@ -810,11 +836,11 @@ def main():
     compiler = Compiler(asm, runtime)
 
     ast = parse(code)
-    print ast
+
+    raw_input()
 
     fptr = compiler.compile(ast)
     fptr()
-
 
     print ""
     print " === Returned === "
@@ -822,5 +848,3 @@ def main():
 
 
 main()
-
-
