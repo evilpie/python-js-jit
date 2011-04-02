@@ -165,6 +165,15 @@ def shl(inst, target, source):
             inst.pack('b', source)
 
 @Instruction.producer
+def sar(inst, target, source):
+    if isinstance(source, int):
+        if source == 1:
+            inst.chr(0xd1)
+            inst.modrm(3, 7, target)
+        else:
+            assert False
+
+@Instruction.producer
 def xor(inst, target, source):
     if isinstance(target, Register):
         if target is eax:

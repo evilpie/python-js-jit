@@ -106,9 +106,16 @@ class Compiler:
         else:
             if type == 'int':
                 self.assembler.shl(register, 1)
-                self.assembler.add(register, 1)
             else:
-                self.assembler.shl(register, 1) # shift left 1
+                self.assembler.shl(register, 1)
+                self.assembler.add(register, 1)
+
+    def unbox(self, register):
+        self.assembler.sar(register, 1)
+
+    def jump_not_int(self, register, jump):
+        self.assembler.test(register, 1)
+        self.assembler.jnz(jump)
 
     def op_comma(self, nodes):
         for node in nodes[:-1]:
@@ -235,17 +242,26 @@ class Compiler:
         elif lhs == 'undefined':
             self.frame.push('float', addressof(self.rt.floats['NaN']))
         else:
-
             @function(c_int, BoxedInt)
             def unary_plus(lhs):
+                print 'stub unary plus'
                 return self.rt.toNumber(lhs).value
 
+            stub = Label('stub')
+            end = Label('end')
+
+            if lhs == 'unknown':
+                self.jump_not_int(eax, stub)
+                self.assembler.jmp(end) # nothing to do already int
+
+            self.assembler.add_(stub)
             self.box(lhs, eax)
             self.assembler.push(eax)
             self.assembler.mov(eax, unary_plus)
             self.assembler.call(eax)
             self.assembler.add(esp, 4)
 
+            self.assembler.add_(end)
             self.frame.push('unknown', eax)
 
 
@@ -482,10 +498,7 @@ class Compiler:
             self.assembler.je(else_part)
 
             #test for int
-            self.assembler.test(eax, 1)
-            self.assembler.je(stub)  # not int use stub
-
-            self.assembler.shr(eax, 1) # todo unboxing
+            self.jump_not_int(eax, stub)
             self.assembler.cmp(eax, 0)
             self.assembler.jne(if_part)
             self.assembler.jmp(else_part)
@@ -546,8 +559,20 @@ class Compiler:
         if type == 'identifier':
             self.increment_identifier(node, -1)
 
+    def op_decrement(self, node):
+        type = node[0].type.lower()
+
+        if type == 'identifier':
+            self.increment_identifier(node, 1)
+
     def increment_identifier(self, node, amount):
         self.op_identifier(node[0])
+
+        if node.postfix:
+            type = self.frame.pop(eax)
+            self.frame.push(type, eax)
+            self.frame.push(type, eax)
+
         self.frame.push('int', amount)
 
         class Nop:
@@ -563,6 +588,8 @@ class Compiler:
             1 : Nop
         })
 
+        if node.postfix:
+            self.frame.pop(eax)
 
     def op_assign(self, node):
         type = node[0].type.lower()

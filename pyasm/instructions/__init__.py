@@ -11,11 +11,11 @@
 from pyasm.instructions.basic import bytes
 from pyasm.instructions.string import mov, cmova, cmovb, lea
 from pyasm.instructions.stack import push, pop, pushfd, popfd
-from pyasm.instructions.math import add, sub, inc, dec, mul, not_, neg, shr, shl, xor
+from pyasm.instructions.math import add, sub, inc, dec, mul, not_, neg, shr, sar, shl, xor
 from pyasm.instructions.control import (
     ret, call, interrupt,
     jmp,
-    je, jne, ja, jl, jle, jb, jbe, ja, jae, jg, jc, jnc,
+    je, jne, ja, jl, jle, jb, jbe, ja, jae, jg, jc, jnc, jnz, jz,
     nop,
 )
 from pyasm.instructions.conditional import cmp, test

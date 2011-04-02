@@ -63,3 +63,6 @@ ja  = conditional_jump('ja'     , 0x87)
 
 jc  = conditional_jump('jc'     , 0x82)
 jnc = conditional_jump('jnc'    , 0x83)
+
+jz  = conditional_jump('jz'     , 0x84)
+jnz = conditional_jump('jnz'    , 0x85)

@@ -4,14 +4,14 @@ class BoxedInt(Structure):
     _fields_ = [("value", c_int)] # Layout: [ value (31 bit) | type (1 bit)]
 
     def isInteger(self):
-        return self.value & 1
+        return (self.value & 1) == 0
 
     def getInteger(self):
         assert self.isInteger()
         return self.value >> 1
 
     def setInteger(self, v):
-        self.value = (v << 1) | 1
+        self.value = (v << 1)
 
     def isBool(self):
         return not self.isInteger() and (self.value >> 1) <= 1
@@ -40,10 +40,10 @@ class BoxedInt(Structure):
         return self.isInteger() or (self.value >> 1) <= 3
 
     def isObject(self):
-        return (self.value & 1) == 0 and (self.value >> 1) > 3
+        return self.value & 1 and (self.value >> 1) > 3
 
     def setObject(self, v):
-        self.value = (v << 1)
+        self.value = (v << 1) | 1
 
     def getObject(self):
         return Object(self.value >> 1)
