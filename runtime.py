@@ -13,9 +13,9 @@ class Runtime:
         'undefined': new_string('undefined')
     }
 
-    floats = {
-        'NaN': new_float(float('nan')),
-        'negative_zero': new_float(float('-0.0'))
+    doubles = {
+        'NaN': new_double(float('nan')),
+        'negative_zero': new_double(float('-0.0'))
     }
 
 
@@ -52,7 +52,7 @@ class Runtime:
             return ecma_type['undefined']
 
         obj = v.toObject()
-        if obj.isFloat():
+        if obj.isDouble():
             return ecma_type['number']
         if obj.isString():
             return ecma_type['string']
@@ -64,14 +64,14 @@ class Runtime:
             return v.toInteger()
         if v.isObject():
             obj = v.toObject()
-            assert obj.isFloat()
+            assert obj.isDouble()
 
-            return obj.to(PrimitiveFloat).value
+            return obj.to(PrimitiveDouble).value
         assert False
 
     def toNumber(self, v):
         if v.isUndefined():
-            return boxed_object(self.floats['NaN'])
+            return boxed_object(self.doubles['NaN'])
         if v.isNull():
             return boxed_integer(0)
         if v.isBool():
@@ -89,9 +89,9 @@ class Runtime:
                     v = float(str)
                     return boxed_object(new_float(v))
                 except:
-                    return boxed_object(self.floats['NaN'])
+                    return boxed_object(self.doubles['NaN'])
 
-        if obj.isFloat():
+        if obj.isDouble():
             return v
 
         primitive_value = self.toPrimitive(v, 'number')
@@ -116,11 +116,11 @@ class Runtime:
                 return boxed_bool(True)
             return boxed_bool(False)
 
-        assert obj.isFloat()
-        float_value = obj.to(PrimitiveFloat).value
-        if math.isnan(float_value):
+        assert obj.isDouble()
+        double_value = obj.to(PrimitiveDouble).value
+        if math.isnan(double_value):
             return boxed_bool(False)
-        return boxed_bool(float_value)
+        return boxed_bool(double_value)
 
 
 

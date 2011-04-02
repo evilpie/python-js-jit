@@ -23,6 +23,7 @@ def movd(inst, target, source):
 def movups(inst, target, source):
 
     inst.chr(0x0f)
+
     if isinstance(target, Address):
         inst.chr(0x11)
     else:
@@ -104,6 +105,28 @@ def subps(inst, target, source):
 @Instruction.producer
 def addps(inst, target, source):
 
+    inst.chr(0x0f)
+    inst.chr(0x58)
+    inst.modrm(3, target, source)
+
+@Instruction.producer
+def subsd(inst, target, source):
+
+    inst.chr(0xf2)
+    inst.chr(0x0f)
+    inst.chr(0x5c)
+    inst.modrm(3, target, source)
+
+@Instruction.producer
+def subpd(inst, target, source):
+    inst.chr(0x66)
+    inst.chr(0x0f)
+    inst.chr(0x5c)
+    inst.modrm(3, target, source)
+
+@Instruction.producer
+def addpd(inst, target, source):
+    inst.chr(0x66)
     inst.chr(0x0f)
     inst.chr(0x58)
     inst.modrm(3, target, source)

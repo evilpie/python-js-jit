@@ -29,6 +29,8 @@ from pyasm.instructions.fpu import (
 )
 from pyasm.instructions.sse import (
     movd,
+    movups,
+
     cvtsi2sd,
     cvttsd2si,
 
@@ -41,5 +43,7 @@ from pyasm.instructions.sse import (
     psubd,
 
     subps,
-    addps
+    addps,
+
+    subsd
 )

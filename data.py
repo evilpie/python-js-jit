@@ -56,8 +56,8 @@ class Object():
     def isPrimitive(self):
         return self.type <= object_types['string']
 
-    def isFloat(self):
-        return self.type == object_types['float']
+    def isDouble(self):
+        return self.type == object_types['double']
 
     def isString(self):
         return self.type == object_types['string']
@@ -65,8 +65,8 @@ class Object():
     def toPrimitive(self):
         assert self.isPrimitive()
 
-        if self.isFloat():
-            return cast(self.ptr, POINTER(PrimitiveFloat))[0].value
+        if self.isDouble():
+            return cast(self.ptr, POINTER(PrimitiveDouble))[0].value
         else:
             return cast(self.ptr, POINTER(PrimitiveString))[0].str
 
@@ -90,9 +90,10 @@ class Object():
 class BaseObject(Structure):
     _fields_ = [('type', c_int)]  # minor hack here
 
-class PrimitiveFloat(Structure):
+class PrimitiveDouble(Structure):
     _fields_ = [('shape', c_void_p),
-                ('value', c_float)]
+                ('dummy', c_int),
+                ('value', c_double)]
 
 class PrimitiveString(Structure):
     _fields_ = [('shape', c_void_p),
@@ -130,8 +131,8 @@ def new_string(str):
 
     return obj
 
-def new_float(float):
-    obj = PrimitiveFloat(object_types['float'], float)
+def new_double(double):
+    obj = PrimitiveDouble(object_types['double'], 0, double)
 
     root.append(obj)
 
@@ -174,9 +175,9 @@ def boxed_number(number):
         if int(number) == number:
             return boxed_integer(number)
         else:
-            return boxed_object(new_float(number))
+            return boxed_object(new_double(number))
     except:
-        return boxed_object(new_float(number))
+        return boxed_object(new_double(number))
 
 def object_value(obj):
     return boxed_object(obj).value
@@ -199,9 +200,9 @@ def boxed_bool(boolean):
 
 object_types = dict(
     # primitives
-    float = 1,
-    int = 2,
-    string = 3,
+    double = 0,
+    int = 1,
+    string = 2,
     # everything higher is object
 )
 
@@ -212,7 +213,7 @@ object_classes = dict(
 
 types = dict(
     int = 0,
-    float = 1,
+    double = 1,
     bool = 2,
     null = 3,
     string = 4,
@@ -244,7 +245,7 @@ def dump_boxed_int(b):
             if obj.isString():
                 print '[string] ', obj.toPrimitive()
             else:
-                print '[float] ', obj.toPrimitive()
+                print '[double] ', obj.toPrimitive()
         else:
             if obj.isArray():
                 obj = obj.to(ArrayObject)

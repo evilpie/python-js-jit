@@ -148,9 +148,9 @@ class Compiler:
         if isinstance(value, int):
             self.frame.push('int', value)
         else:
-            float = new_float(value)
-            self.constant_pool.append(float)
-            self.frame.push('float', addressof(float))
+            double = new_double(value)
+            self.constant_pool.append(double)
+            self.frame.push('double', addressof(double))
 
     def op_string(self, node):
         value = node.value
@@ -200,19 +200,18 @@ class Compiler:
         if lhs == 'int':
             self.assembler.neg(eax)
             self.frame.push('int', eax)
-        elif lhs == 'float':
-            self.assembler.mov(ebx, eax.addr + 4)
-            self.assembler.movd(xmm0, ebx)         #  v
-            self.assembler.pxor(xmm1, xmm1)        #  0
-            self.assembler.subps(xmm1, xmm0)       #  v = 0 - v = -v
-            self.assembler.bytes(0x66, 0x0f, 0x7e, 0xcb) # movd ebx, xmm1
-            self.assembler.mov(eax.addr + 0, ebx)
+        elif lhs == 'double':
 
-            self.frame.push('float', eax)
+            self.assembler.bytes(0x0f, 0x10, 0x00)          #movups xmm0, [eax]
+            self.assembler.pxor(xmm1, xmm1)                 #pxor xmm1, xmm1
+            self.assembler.bytes(0x66, 0x0f, 0x5c, 0xc8)    #subpd xmm1, xmm0
+            self.assembler.bytes(0x0f, 0x11, 0x08)          #movups [eax], xmm1
+
+            self.frame.push('double', eax)
         elif lhs == 'null':
-            self.frame.push('float', addressof(self.rt.floats['negative_zero']))
+            self.frame.push('double', addressof(self.rt.doubles['negative_zero']))
         elif lhs == 'undefined':
-            self.frame.push('float', addressof(self.rt.floats['NaN']))
+            self.frame.push('double', addressof(self.rt.doubles['NaN']))
         else:
 
             self.box(lhs, eax)
@@ -233,7 +232,7 @@ class Compiler:
         self.compile_node(node[0])
 
         lhs = self.frame.peek(-1)
-        if lhs in ['int', 'float']:
+        if lhs in ['int', 'double']:
             return # nothing to do here
 
         lhs = self.frame.pop(eax)
@@ -242,7 +241,7 @@ class Compiler:
         elif lhs == 'null':
             self.frame.push('int', 0)
         elif lhs == 'undefined':
-            self.frame.push('float', addressof(self.rt.floats['NaN']))
+            self.frame.push('double', addressof(self.rt.doubles['NaN']))
         else:
             @function(c_int, BoxedInt)
             def unary_plus(lhs):
@@ -341,39 +340,33 @@ class Compiler:
             getattr(self.assembler, op)(eax, ebx)
             self.frame.push('int', eax)
             return
-        elif lhs == rhs == 'float':
-            self.assembler.mov(ecx, eax.addr + 4)
-            self.assembler.mov(edx, ebx.addr + 4)
-            self.assembler.movd(xmm0, ecx)
-            self.assembler.movd(xmm1, edx)
-            getattr(self.assembler, op + 'ps')(xmm1, xmm0)
-            self.assembler.bytes(0x66, 0x0f, 0x7e, 0xcb) # movd ebx, xmm1
-            self.assembler.mov(eax.addr + 4, ebx)
+        elif lhs == rhs == 'double':
+            self.assembler.bytes(0x0f, 0x10, 0x00)          #movups xmm0, [eax]
+            self.assembler.bytes(0x0f, 0x10, 0x0b)          #movups xmm1, [ebx]
+            getattr(self.assembler, op + 'pd')(xmm1, xmm0)  #subpd xmm1, xmm0
+            self.assembler.bytes(0x0f, 0x11, 0x08)          #movups [eax], xmm1
 
-            self.frame.push('float', eax)
+            self.frame.push('double', eax)
             return
-        elif lhs in ['int', 'float'] and rhs in ['int', 'float']:
+        elif lhs in ['int', 'double'] and rhs in ['int', 'double']:
             if lhs == 'int':
                 self.assembler.cvtsi2ss(xmm0, eax)
             else:
-                self.assembler.mov(ecx, eax.addr + 4)
-                self.assembler.movd(xmm0, ecx)
+                self.assembler.bytes(0x0f, 0x10, 0x00) #movups xmm0, [eax]
 
             if rhs == 'int':
-                self.assembler.cvtsi2ss(xmm1, ebx)
+                self.assembler.cvtsi2ss(xmm1, xmm)
             else:
-                self.assembler.mov(edx, ebx.addr + 4)
-                self.assembler.movd(xmm1, edx)
+                self.assembler.bytes(0x0f, 0x10, 0x0b) #movups xmm1, [ebx]
 
-            getattr(self.assembler, op + 'ps')(xmm1, xmm0) # select operation
-            self.assembler.bytes(0x66, 0x0f, 0x7e, 0xc9) # movd ecx, xmm1
+            getattr(self.assembler, op + 'pd')(xmm1, xmm0) # select operation
 
-            if lhs == 'float':
-                self.assembler.mov(eax.addr + 4, ecx)
-                self.frame.push('float', eax)
+            if lhs == 'double':
+                self.assembler.bytes(0x0f, 0x11, 0x08)  #movups [eax], xmm1
+                self.frame.push('double', eax)
             else:
-                self.assembler.mov(ebx.addr + 4, ecx)
-                self.frame.push('float', ebx)
+                self.assembler.bytes(0x0f, 0x11, 0x0b)  #movups [ebx], xmm1
+                self.frame.push('double', ebx)
             return
 
 
@@ -427,7 +420,7 @@ class Compiler:
             self.assembler.add_(end)
 
             self.frame.push('bool', eax)
-        elif lhs == rhs == 'float':
+        elif lhs == rhs == 'double':
             end = Label('end')
 
             #todo: fix for NaN
@@ -515,7 +508,7 @@ class Compiler:
             stub = Label('stub')
 
             self.assembler.add_(test)
-            self.box(type, eax) # currently only required for float
+            self.box(type, eax) # currently only required for double
 
             #test for bool
             self.assembler.cmp(eax, true_value)
@@ -799,7 +792,7 @@ class Compiler:
         self.compile_node(node[0])
 
         type = self.frame.pop(eax)
-        if type == 'int' or type == 'float':
+        if type == 'int' or type == 'double':
             self.frame.push('string', addressof(self.rt.strings['number']))
         elif type == 'null':
             self.frame.push('string', addressof(self.rt.strings['null']))
@@ -837,6 +830,7 @@ def main():
 
     ast = parse(code)
 
+    raw_input()
     fptr = compiler.compile(ast)
     fptr()
 
