@@ -49,21 +49,43 @@ class AssemblerWrapper:
     def add_(self, a):
         self.assembler.add(a)
 
-    def compile(self, retype, *args):
-        return self.assembler.compile(retype)
+    def compile(self, *args):
+        return self.assembler.compile(*args)
 
 class Compiler:
     def __init__(self, assembler, rt):
         self.assembler = AssemblerWrapper(assembler)
         self.frame = Frame(self.assembler)
         self.constant_pool = []
-        self.names = []
+
         self.objects = (c_int * 20)()
 
-        self.rt = rt
+        self.rt = rt # runtime
+        self.state = {
+            'with': False,
+            'eval': False
+        }
+
+        self.vars = {}
+        self.var_space = None
+
+        self.return_value = BoxedInt(null_value)
+
+    def declare_vars(self, vars):
+        index = 0
+
+        for var in vars:
+            if var.name not in self.vars:
+                self.vars[var.name] = index
+                index = index + 1
+
+        self.var_space = (c_int * index)()
+        self.var_space[:] = [undefined_value] * index
 
     def compile(self, ast):
         assert ast.type == 'SCRIPT'
+
+        self.declare_vars(ast.varDecls)
 
         self.assembler.push(ebp)
         self.assembler.mov(ebp, esp)
@@ -73,9 +95,7 @@ class Compiler:
         self.assembler.pop(ebp)
         self.assembler.ret()
 
-        print self.assembler.assembler
-
-        return self.assembler.compile(BoxedInt)
+        return self.assembler.compile()
 
     def compile_node(self, node):
         getattr(self, 'op_' + node.type.lower())(node)
@@ -101,13 +121,6 @@ class Compiler:
         t = None
         for node in nodes:
             self.compile_node(node)
-            if len(self.frame.stack) > 0:
-                t = self.frame.pop(eax)
-
-        if not t:
-            self.assembler.mov(eax, null_value)
-        else:
-            self.box(t, eax)
 
     def op_group(self, node):
         self.compile_node(node[0])
@@ -115,11 +128,13 @@ class Compiler:
     def op_semicolon(self, node):
         self.compile_node(node.expression)
 
+        type = self.frame.pop(eax)
+        self.box(type, eax)
+        self.assembler.mov(ebx, addressof(self.return_value))
+        self.assembler.mov(ebx.addr + 0, eax)
+
     def op_number(self, node):
         value = node.value
-
-        print node
-        print 'number', value, type(value)
 
         if isinstance(value, int):
             self.frame.push('int', value)
@@ -135,9 +150,10 @@ class Compiler:
         self.constant_pool.append(str)
         self.frame.push('string', addressof(str))
 
-    def op_array_init(self, node):
-        for x in node:
-            self.compile_node(x)
+    def op_array_init(self, nodes):
+        for node in nodes:
+            if node: # could be hole
+                self.compile_node(node)
 
         @function(c_int, c_int)
         def array_init(size):
@@ -148,18 +164,21 @@ class Compiler:
 
             return addressof(obj)
 
-        self.assembler.push(len(node)) #size
+        self.assembler.push(len(nodes)) #size
         self.assembler.mov(eax, array_init)
         self.assembler.call(eax)
         self.assembler.add(esp, 4)
 
         self.assembler.mov(ebx, eax.addr + 8) # elements
 
-        i = (len(node) - 1) * 4
-        for x in node:
-            t = self.frame.pop(ecx)
-            self.box(t, ecx)
-            self.assembler.mov(ebx.addr + i, ecx)
+        i = (len(nodes) - 1) * 4
+        for node in nodes:
+            if node:
+                t = self.frame.pop(ecx)
+                self.box(t, ecx)
+                self.assembler.mov(ebx.addr + i, ecx)
+            else:
+                self.assembler.mov(ebx.addr + i, undefined_value) # todo: needs special value
             i = i - 4
 
         self.frame.push('object', eax)
@@ -181,6 +200,10 @@ class Compiler:
             self.assembler.mov(eax.addr + 0, ebx)
 
             self.frame.push('float', eax)
+        elif lhs == 'null':
+            self.frame.push('float', addressof(self.rt.floats['negative_zero']))
+        elif lhs == 'undefined':
+            self.frame.push('float', addressof(self.rt.floats['NaN']))
         else:
 
             self.box(lhs, eax)
@@ -209,6 +232,8 @@ class Compiler:
             self.frame.push('int', eax) # true is 1 and false is 0 already
         elif lhs == 'null':
             self.frame.push('int', 0)
+        elif lhs == 'undefined':
+            self.frame.push('float', addressof(self.rt.floats['NaN']))
         else:
 
             @function(c_int, BoxedInt)
@@ -241,7 +266,7 @@ class Compiler:
             self.assembler.add_(end)
 
             self.frame.push('bool', eax)
-        elif lhs == 'null':
+        elif lhs == 'null' or lhs == 'undefined':
             self.frame.push('bool', 1)
         elif lhs == 'object':
             self.frame.push('bool', 0)
@@ -504,37 +529,52 @@ class Compiler:
         else:
             assert 'not done yet', False
 
+    def op_var(self, nodes):
+        for node in nodes:
+            if not hasattr(node, 'initializer'):
+                continue
+
+            name = node.name
+            if not name in self.vars:
+                raise 'var not declared'
+
+            index = self.vars[name]
+
+            self.compile_node(node.initializer)
+            rhs = self.frame.pop(eax)
+
+            self.box(rhs, eax)
+            self.assembler.mov(ebx, addressof(self.var_space))
+            self.assembler.mov(ebx.addr + index * 4, eax)
+
     def assign_identifier(self, node):
         name = node[0].value
-        self.names.append(name)
-        index = len(self.names) - 1
-        self.objects[index] = null_value
+
+        if not name in self.vars:
+            raise 'var not declared'
+
+        index = self.vars[name]
 
         self.compile_node(node[1])
+        rhs = self.frame.pop(eax)
 
-        @function(None, c_int, BoxedInt)
-        def assign(index, value):
-            print 'stub assign', self.names[index],  value
+        if rhs == 'unknown':
+            self.assembler.mov(ebx, addressof(self.var_space))
+            self.assembler.mov(ebx.addr + index * 4, eax)
 
-            self.objects[index] = value.value
+            self.frame.push('unknown', eax)
+        else:
+            self.assembler.mov(edx, eax)
+            self.box(rhs, edx)
+            self.assembler.mov(ebx, addressof(self.var_space))
+            self.assembler.mov(ebx.addr + index * 4, edx)
 
-        rhs = self.frame.pop(ebx)
-
-        self.box(rhs, ebx)
-        self.assembler.push(ebx)
-        self.assembler.push(index)
-        self.assembler.mov(eax, assign)
-        self.assembler.call(eax)
-        self.assembler.add(esp, 8)
-
-        self.frame.push(rhs, ebx)
+            self.frame.push(rhs, eax)
 
     def assign_index(self, node):
         self.compile_node(node[0][0])
         self.compile_node(node[0][1])
         self.compile_node(node[1])
-
-        print node
 
         value = self.frame.pop(ecx)
         index = self.frame.pop(ebx)
@@ -574,17 +614,13 @@ class Compiler:
     def op_identifier(self, node):
         name = node.value
 
-        index = self.names.index(name)
+        if name not in self.vars:
+            raise 'var not declared'
 
-        @function(c_int, c_int)
-        def identifier(index):
-            print 'stub identifier', self.names[index]
-            return self.objects[index]
+        index = self.vars[name]
 
-        self.assembler.mov(eax, identifier)
-        self.assembler.push(index)
-        self.assembler.call(eax)
-        self.assembler.add(esp, 4)
+        self.assembler.mov(ebx, addressof(self.var_space))
+        self.assembler.mov(eax, ebx.addr + index * 4)
 
         self.frame.push('unknown', eax)
 
@@ -688,25 +724,23 @@ class Compiler:
             self.frame.push('string', eax)
 
 def main():
-    asm = Program()
-
+    import sys
     from runtime import Runtime
 
+    file = sys.argv[1]
+    code = open(file).read()
 
-    code = """
-        1.5 == 1.5
-    """
+    asm = Program()
     runtime = Runtime()
     compiler = Compiler(asm, runtime)
 
     ast = parse(code)
-    #print ast
+    print ast
 
     fptr = compiler.compile(ast)
+    fptr()
 
-    v = fptr()
-
-    dump_boxed_int(v)
+    dump_boxed_int(compiler.return_value)
 
 
 main()

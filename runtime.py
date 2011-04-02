@@ -14,7 +14,8 @@ class Runtime:
     }
 
     floats = {
-        'NaN': new_float(float('nan'))
+        'NaN': new_float(float('nan')),
+        'negative_zero': new_float(float('-0.0'))
     }
 
 
@@ -195,11 +196,3 @@ class Runtime:
 
         number = self.numberConvert(left) - self.numberConvert(right)
         return boxed_number(number)
-
-
-
-
-
-
-
-
