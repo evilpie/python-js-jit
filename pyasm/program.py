@@ -8,7 +8,7 @@
     :license: GNU AGPL v3 or later, see LICENSE for more details.
 """
 
-from ctypes import cast, CFUNCTYPE, c_int, c_char, c_long, c_void_p, POINTER, windll
+from ctypes import cast, CFUNCTYPE, c_int, c_char, c_long, c_void_p, POINTER
 import ctypes
 import os
 
