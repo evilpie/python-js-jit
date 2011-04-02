@@ -6,7 +6,7 @@ class BoxedInt(Structure):
     def isInteger(self):
         return (self.value & 1) == 0
 
-    def getInteger(self):
+    def toInteger(self):
         assert self.isInteger()
         return self.value >> 1
 
@@ -16,7 +16,7 @@ class BoxedInt(Structure):
     def isBool(self):
         return not self.isInteger() and (self.value >> 1) <= 1
 
-    def getBool(self):
+    def toBool(self):
         assert self.isBool()
         return bool(self.value >> 1)
 
@@ -45,11 +45,8 @@ class BoxedInt(Structure):
     def setObject(self, v):
         self.value = (v << 1) | 1
 
-    def getObject(self):
+    def toObject(self):
         return Object(self.value >> 1)
-
-    def getPointer(self):
-        return self.value >> 1
 
 class Object():
     def __init__(self, ptr):
@@ -236,13 +233,13 @@ def dump_boxed_int(b):
         elif b.isUndefined():
             print '[undefined]'
         elif b.isBool():
-            print '[true]' if b.getBool() else '[false]'
+            print '[true]' if b.toBool() else '[false]'
         else:
-            print '[integer] ', b.getInteger()
+            print '[integer] ', b.toInteger()
     else:
-        print '[heap object] @', hex(b.getPointer())
+        print '[heap object] @', hex(b.value >> 1)
 
-        obj = b.getObject()
+        obj = b.toObject()
         if obj.isPrimitive():
             if obj.isString():
                 print '[string] ', obj.toPrimitive()

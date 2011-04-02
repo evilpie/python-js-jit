@@ -32,7 +32,7 @@ class Runtime:
             elif v.isBool():
                 return self.strings['boolean']
         else:
-            obj = v.getObject()
+            obj = v.toObject()
             if obj.isPrimitive():
                 if obj.isString():
                     return self.strings['string']
@@ -51,7 +51,7 @@ class Runtime:
         if v.isUndefined():
             return ecma_type['undefined']
 
-        obj = v.getObject()
+        obj = v.toObject()
         if obj.isFloat():
             return ecma_type['number']
         if obj.isString():
@@ -61,9 +61,9 @@ class Runtime:
 
     def numberConvert(self, v):
         if v.isInteger():
-            return v.getInteger()
+            return v.toInteger()
         if v.isObject():
-            obj = v.getObject()
+            obj = v.toObject()
             assert obj.isFloat()
 
             return obj.to(PrimitiveFloat).value
@@ -75,10 +75,10 @@ class Runtime:
         if v.isNull():
             return boxed_integer(0)
         if v.isBool():
-            return boxed_integer(0 + v.getBool())
+            return boxed_integer(0 + v.toBool())
         if v.isInteger():
             return v
-        obj = v.getObject()
+        obj = v.toObject()
         if obj.isString():
             str = obj.to(PrimitiveString).str
             try:
@@ -106,9 +106,9 @@ class Runtime:
         if v.isBool():
             return v
         if v.isInteger():
-            return boxed_bool(v.getInteger())
+            return boxed_bool(v.toInteger())
 
-        obj = v.getObject()
+        obj = v.toObject()
         if obj.isObject():
             return boxed_bool(True)
         if obj.isString():
@@ -148,8 +148,8 @@ class Runtime:
                 return self.numberConvert(left) == self.numberConvert(right)
 
             if ltype == ecma_type['string']:
-                lvalue = left.getObject().to(PrimitiveString).str
-                rvalue = right.getObject().to(PrimitiveString).str
+                lvalue = left.toObject().to(PrimitiveString).str
+                rvalue = right.toObject().to(PrimitiveString).str
                 return lvalue == rvalue
 
             # either bool or object
@@ -168,8 +168,8 @@ class Runtime:
             pass
 
         if ltype == rtype == ecma_type['string']:
-            lvalue = left.getObject().to(PrimitiveString).str
-            rvalue = right.getObject().to(PrimitiveString).str
+            lvalue = left.toObject().to(PrimitiveString).str
+            rvalue = right.toObject().to(PrimitiveString).str
             return lvalue == rvalue
 
         return self.toNumber(left) == self.toNumber(right)

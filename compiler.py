@@ -683,12 +683,12 @@ class Compiler:
             print 'stub assign index', obj, index, value
 
             if index.isInteger():
-                id = index.getInteger()
+                id = index.toInteger()
             else:
                 assert 'bla blub', False
 
             if obj.isObject():
-                obj = obj.getObject()
+                obj = obj.toObject()
                 if obj.isArray():
                     array = obj.to(ArrayObject)
                     if id < array.length:
@@ -731,7 +731,7 @@ class Compiler:
             property = self.names[index]
 
             if base.isObject():
-                obj = base.getObject()
+                obj = base.toObject()
                 if obj.isString():
                     if property == 'length':
                         return integer_value(len(obj.toPrimitive()))
@@ -767,7 +767,7 @@ class Compiler:
             print 'stub index int', index, base
 
             if base.isObject():
-                obj = base.getObject()
+                obj = base.toObject()
                 if obj.isString():
                     string = obj.toPrimitive()
                     if index < len(string):
@@ -836,8 +836,6 @@ def main():
     compiler = Compiler(asm, runtime)
 
     ast = parse(code)
-
-    raw_input()
 
     fptr = compiler.compile(ast)
     fptr()
