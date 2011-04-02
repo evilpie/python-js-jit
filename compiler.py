@@ -359,24 +359,21 @@ class Compiler:
             return
 
 
-        self.box(rhs, ebx)
-        self.box(lhs, eax)
-
         @function(c_int, BoxedInt, BoxedInt)
         def add_stub(lhs, rhs):
             return self.rt.add(lhs, rhs).value
 
         @function(c_int, BoxedInt, BoxedInt)
         def sub_stub(lhs, rhs):
-            print 'sub stub'
-            dump_boxed_int(lhs)
-            dump_boxed_int(rhs)
             return self.rt.sub(lhs, rhs).value
 
         stubs = {
             'add': add_stub,
             'sub': sub_stub
         }
+
+        self.box(rhs, ebx)
+        self.box(lhs, eax)
 
         self.assembler.push(ebx)
         self.assembler.push(eax)
@@ -533,7 +530,8 @@ class Compiler:
         end = Label('end')
         self.assembler.add_(start)
 
-        self.conditional(node.condition, node.body, None, else_jump=end)
+        if node.condition:
+            self.conditional(node.condition, node.body, None, else_jump=end)
 
         if node.update:
             self.compile_node(node.update)
