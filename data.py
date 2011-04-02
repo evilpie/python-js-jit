@@ -168,6 +168,15 @@ def boxed_integer(int):
     b.setInteger(int)
     return b
 
+def number_value(number):
+    return boxed_number(number).value
+
+def boxed_number(number):
+    if int(number) == number:
+        return boxed_integer(number)
+    else:
+        return boxed_object(new_float(number))
+
 def object_value(obj):
     return boxed_object(obj).value
 

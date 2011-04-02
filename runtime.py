@@ -174,9 +174,27 @@ class Runtime:
         return self.toNumber(left) == self.toNumber(right)
 
 
+    def add(self, left, right):
+        left = self.toPrimitive(left)
+        right = self.toPrimitive(right)
 
+        ltype = self.type(left)
+        rtype = self.type(right)
+        if ltype == ecma_type['string'] or rtype == ecma_type['string']:
+            return boxed_integer(0xdead)
 
+        left = self.toNumber(left)
+        right = self.toNumber(right)
 
+        number = self.numberConvert(left) + self.numberConvert(right)
+        return boxed_number(number)
+
+    def sub(self, left, right):
+        left = self.toNumber(left)
+        right = self.toNumber(right)
+
+        number = self.numberConvert(left) - self.numberConvert(right)
+        return boxed_number(number)
 
 
 

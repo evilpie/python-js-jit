@@ -299,24 +299,26 @@ class Compiler:
                 self.frame.push('float', ebx)
             return
 
-        if lhs != 'unknown':
-            self.assembler.shl(eax, 1)
-            if lhs == 'int':
-                self.assembler.add(eax, 1)
 
-        if rhs != 'unknown':
-            self.assembler.shl(ebx, 1)
-            if rhs == 'int':
-                self.assembler.add(ebx, 1)
+        self.box(rhs, ebx)
+        self.box(lhs, eax)
 
         @function(c_int, BoxedInt, BoxedInt)
-        def add(lhs, rhs):
-            print 'stub add', lhs, rhs
-            return IntegerValue(1337)
+        def add_stub(lhs, rhs):
+            return self.rt.add(lhs, rhs).value
+
+        @function(c_int, BoxedInt, BoxedInt)
+        def sub_stub(lhs, rhs):
+            return self.rt.sub(lhs, rhs).value
+
+        stubs = {
+            'add': add_stub,
+            'sub': sub_stub
+        }
 
         self.assembler.push(ebx)
         self.assembler.push(eax)
-        self.assembler.mov(ecx, add)
+        self.assembler.mov(ecx, stubs[op])
         self.assembler.call(ecx)
         self.assembler.add(esp, 8)
 
@@ -391,8 +393,6 @@ class Compiler:
         if type == 'int':
             self.assembler.cmp(eax, 0)
             self.assembler.jne(if_part)
-        elif type == 'float':
-            raise NotImplementedError('float conditional')
         elif type == 'bool':
             self.assembler.test(eax, 1)
             self.assembler.jne(if_part)
@@ -413,6 +413,7 @@ class Compiler:
             stub = Label('stub')
 
             self.assembler.add_(test)
+            self.box(type, eax)
 
             #test for bool
             self.assembler.cmp(eax, true_value)
@@ -663,7 +664,7 @@ def main():
 
 
     code = """
-        typeof null
+        1 - true
     """
     runtime = Runtime()
     compiler = Compiler(asm, runtime)
