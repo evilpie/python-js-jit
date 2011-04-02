@@ -368,6 +368,9 @@ class Compiler:
 
         @function(c_int, BoxedInt, BoxedInt)
         def sub_stub(lhs, rhs):
+            print 'sub stub'
+            dump_boxed_int(lhs)
+            dump_boxed_int(rhs)
             return self.rt.sub(lhs, rhs).value
 
         stubs = {
@@ -441,7 +444,7 @@ class Compiler:
             self.frame.push('bool', eax)
 
 
-    def conditional(self, cond_node, if_node, else_node):
+    def conditional(self, cond_node, if_node, else_node, else_jump=None):
         self.compile_node(cond_node)
 
         type = self.frame.pop(eax)
@@ -504,6 +507,9 @@ class Compiler:
             self.assembler.add_(else_part)
             self.compile_node(else_node)
             self.assembler.jmp(end)
+        elif else_jump:
+            self.assembler.add_(else_part)
+            self.assembler.jmp(else_jump)
         else:
             self.assembler.add_(else_part)
             self.assembler.jmp(end)
@@ -518,6 +524,47 @@ class Compiler:
 
     def op_hook(self, node):
         self.conditional(node[0], node[1], node[2])
+
+    def op_for(self, node):
+        if node.setup:
+            self.compile_node(node.setup)
+
+        start = Label('start')
+        end = Label('end')
+        self.assembler.add_(start)
+
+        self.conditional(node.condition, node.body, None, else_jump=end)
+
+        if node.update:
+            self.compile_node(node.update)
+            self.frame.pop(eax)
+
+        self.assembler.jmp(start)
+        self.assembler.add_(end)
+
+    def op_increment(self, node):
+        type = node[0].type.lower()
+
+        if type == 'identifier':
+            self.increment_identifier(node, -1)
+
+    def increment_identifier(self, node, amount):
+        self.op_identifier(node[0])
+        self.frame.push('int', amount)
+
+        class Nop:
+            type = 'NOP'
+
+        self.op_minus({
+            0 : Nop,
+            1 : Nop
+        })
+
+        self.op_assign({
+            0 : node[0],
+            1 : Nop
+        })
+
 
     def op_assign(self, node):
         type = node[0].type.lower()
@@ -723,6 +770,9 @@ class Compiler:
 
             self.frame.push('string', eax)
 
+    def op_nop(self, node):
+        pass
+
 def main():
     import sys
     from runtime import Runtime
@@ -740,6 +790,9 @@ def main():
     fptr = compiler.compile(ast)
     fptr()
 
+
+    print ""
+    print " === Returned === "
     dump_boxed_int(compiler.return_value)
 
 
