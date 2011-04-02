@@ -55,8 +55,8 @@ class Executable(object):
 
             self.address = VirtualAlloc(0, self.size, 0x1000, 0x40)
         else:
-            self.address = pythonapi.valloc(self.size)
-            pythonapi.mprotect(self.address, self.size, read_write_execute)
+            self.address = ctypes.pythonapi.valloc(self.size)
+            ctypes.pythonapi.mprotect(self.address, self.size, read_write_execute)
 
         self.ptr = cast(c_void_p(self.address), POINTER(c_char * self.size))
 
@@ -76,8 +76,8 @@ class Executable(object):
 
             VirtualFree(self.address, self.size, 0x8000)
         else:
-            pythonapi.mprotect(self.address, self.size, read_write)
-            pythonapi.free(self.address)
+            ctypes.pythonapi.mprotect(self.address, self.size, read_write)
+            ctypes.pythonapi.free(self.address)
 
 
 def compile(instructions, restype=None, argtypes=()):
