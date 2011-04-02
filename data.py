@@ -37,10 +37,10 @@ class BoxedInt(Structure):
         self.value = undefined_value
 
     def isPrimitive(self):
-        return self.isInteger() or (self.value >> 1) <= 2
+        return self.isInteger() or (self.value >> 1) <= 3
 
     def isObject(self):
-        return (self.value & 1) == 0 and (self.value >> 1) > 2
+        return (self.value & 1) == 0 and (self.value >> 1) > 3
 
     def setObject(self, v):
         self.value = (v << 1)
@@ -229,6 +229,8 @@ def dump_boxed_int(b):
     if b.isPrimitive():
         if b.isNull():
             print '[null]'
+        elif b.isUndefined():
+            print '[undefined]'
         elif b.isBool():
             print '[true]' if b.getBool() else '[false]'
         else:

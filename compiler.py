@@ -118,6 +118,9 @@ class Compiler:
     def op_number(self, node):
         value = node.value
 
+        print node
+        print 'number', value, type(value)
+
         if isinstance(value, int):
             self.frame.push('int', value)
         else:
@@ -166,11 +169,9 @@ class Compiler:
         self.compile_node(node[0])
 
         lhs = self.frame.pop(eax)
-        notInteger = Label('not integer')
         if lhs == 'int':
             self.assembler.neg(eax)
             self.frame.push('int', eax)
-
         elif lhs == 'float':
             self.assembler.mov(ebx, eax.addr + 4)
             self.assembler.movd(xmm0, ebx)         #  v
@@ -180,7 +181,21 @@ class Compiler:
             self.assembler.mov(eax.addr + 0, ebx)
 
             self.frame.push('float', eax)
+        else:
 
+            self.box(lhs, eax)
+
+            @function(c_int, BoxedInt)
+            def unary_minus(lhs):
+                return self.rt.sub(boxed_integer(0), lhs).value
+
+            self.box(lhs, eax)
+            self.assembler.push(eax)
+            self.assembler.mov(eax, unary_minus)
+            self.assembler.call(eax)
+            self.assembler.add(esp, 4)
+
+            self.frame.push('unknown', eax)
 
     def op_unary_plus(self, node):
         self.compile_node(node[0])
@@ -247,6 +262,25 @@ class Compiler:
             self.assembler.add(esp, 4)
 
             self.frame.push('bool', eax)
+
+    def op_void(self, node):
+        self.compile_node(node[0])
+
+        lhs = self.frame.pop(eax)
+
+        @function(None, BoxedInt)
+        def log(v):
+            print 'void stub (logging)'
+            dump_boxed_int(v)
+
+        self.box(lhs, eax)
+
+        self.assembler.push(eax)
+        self.assembler.mov(eax, log)
+        self.assembler.call(eax)
+        self.assembler.add(esp, 4)
+
+        self.frame.push('undefined', 3)
 
     def op_plus(self, node):
         self.op_binary(node, 'add')
@@ -368,6 +402,7 @@ class Compiler:
 
             @function(c_int, BoxedInt, BoxedInt)
             def eq(lhs, rhs):
+                print 'stub eq'
                 return 1 if self.rt.equality(lhs, rhs) else 0
 
             self.box(rhs, ecx)
@@ -413,7 +448,7 @@ class Compiler:
             stub = Label('stub')
 
             self.assembler.add_(test)
-            self.box(type, eax)
+            self.box(type, eax) # currently only required for float
 
             #test for bool
             self.assembler.cmp(eax, true_value)
@@ -477,25 +512,20 @@ class Compiler:
 
         self.compile_node(node[1])
 
-        @function(None, c_int, c_int, BoxedInt)
-        def assign(index, type, value):
-            print 'stub assign', self.names[index], type, value
+        @function(None, c_int, BoxedInt)
+        def assign(index, value):
+            print 'stub assign', self.names[index],  value
 
-            if type == types['int']:
-                self.objects[index] = integer_value(value.value)
-            elif type == types['unknown']:
-                self.objects[index] = value.value
-            else:
-                self.objects[index] = object_value(value.value)
+            self.objects[index] = value.value
 
         rhs = self.frame.pop(ebx)
 
-        self.assembler.mov(eax, assign)
+        self.box(rhs, ebx)
         self.assembler.push(ebx)
-        self.assembler.push(types[rhs])
         self.assembler.push(index)
+        self.assembler.mov(eax, assign)
         self.assembler.call(eax)
-        self.assembler.add(esp, 12)
+        self.assembler.add(esp, 8)
 
         self.frame.push(rhs, ebx)
 
@@ -664,13 +694,13 @@ def main():
 
 
     code = """
-        1 - true
+        1.5 == 1.5
     """
     runtime = Runtime()
     compiler = Compiler(asm, runtime)
 
     ast = parse(code)
-    print ast
+    #print ast
 
     fptr = compiler.compile(ast)
 
