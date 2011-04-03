@@ -1,4 +1,5 @@
 from pyasm.registers import *
+from data import *
 
 class FrameValue:
     def __init__(self, frame):
@@ -47,17 +48,22 @@ class FrameValue:
             self.frame.free_reg(self.reg)
             self.reg = None
 
-    def spill(self):
+    def spill(self, forget=False):
         print 'spill', self.reg, self.memory, self.constant
-        if self.is_constant() or self.in_memory():
+        if self.in_memory():
             return
         index = self.frame.spill_index
-        self.frame.assembler.mov(esi.addr + index * 4, self.reg)
-
-        self.frame.free_reg(self.reg)
+        if self.in_reg():
+            self.frame.assembler.mov(esi.addr + index * 4, self.reg)
+            self.frame.free_reg(self.reg)
+        else:
+            assert self.is_constant()
+            self.frame.assembler.mov(esi.addr + index * 4, self.to_boxed_int().value)
         self.reg = None
         self.constant = False
         self.memory = index
+        if forget:
+            self.type = 'unknown'
 
         self.frame.spill_index += 1
 
@@ -131,10 +137,10 @@ class Frame:
 
         self.free.append(register)
 
-    def spill_all(self):
+    def spill_all(self, forget=False):
         print 'spill all', self.stack
         for v in self.stack:
-            v.spill()
+            v.spill(forget=forget)
 
     def push(self, type, register):
         v = FrameValue(self)

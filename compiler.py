@@ -119,14 +119,16 @@ class Compiler:
                 reg = v.to_reg()
                 if reg != target:
                     self.assembler.mov(target, reg)
-                    v.unuse()
             else:
                 reg = v.to_reg()
                 self.assembler.shl(reg, 1)
                 self.assembler.add(reg, 1)
                 if target != reg:
                     self.assembler.mov(target, reg)
-                    v.unuse()
+
+    def jump_not_int(self, reg, jump):
+        self.assembler.test(reg, 1)
+        self.assembler.jnz(jump)
 
     def compile_node(self, node):
         getattr(self, 'op_' + node.type.lower())(node)
@@ -167,7 +169,7 @@ class Compiler:
 
         str = new_string(value)
         self.constant_pool.append(str)
-        self.frame.push('string', addressof(str))
+        self.frame.push_string(addressof(str))
 
     def op_true(self, node):
         self.frame.push_bool(True)
@@ -515,25 +517,23 @@ class Compiler:
     def conditional(self, cond_node, if_node, else_node, else_jump=None):
         self.compile_node(cond_node)
 
-        type = self.frame.pop(eax)
-
         if_part = Label('if part')
         else_part = Label('else part')
         end = Label('end')
 
-        if type == 'int':
-            self.assembler.cmp(eax, 0)
-            self.assembler.jne(if_part)
-        elif type == 'bool':
-            self.assembler.test(eax, 1)
-            self.assembler.jne(if_part)
-        elif type == 'null':
-            pass # always else_node
-        elif type == 'object':
-            self.assembler.jmp(if_part) # {} ? true : false => always true
-        elif type == 'string':
-            raise NotImplementedError('str conditional')
+        cond = self.frame.peek(-1)
+        if cond.is_constant():
+            boolean = self.rt.toBoolean(cond.to_boxed_int())
+            print boolean.toBool()
+            if boolean.toBool() == True:
+                self.compile_node(if_node)
+            else:
+                if else_jump:
+                    self.assembler.jmp(else_jump)
+                elif else_node:
+                    self.assembler.compile_node(else_node)
         else:
+            self.frame.spill_all()
 
             @function(c_int, BoxedInt)
             def stub_conditional(condition):
@@ -543,27 +543,25 @@ class Compiler:
             test = Label('test')
             stub = Label('stub')
 
-            self.assembler.add_(test)
-            self.box(type, eax) # currently only required for double
+            reg = cond.to_reg()
 
+            self.assembler.add_(test)
             #test for bool
-            self.assembler.cmp(eax, true_value)
+            self.assembler.cmp(reg, true_value)
             self.assembler.je(if_part)
-            self.assembler.cmp(eax, false_value)
+            self.assembler.cmp(reg, false_value)
             self.assembler.je(else_part)
 
             #test for int
-            self.jump_not_int(eax, stub)
-            self.assembler.cmp(eax, 0)
+            self.jump_not_int(reg, stub)
+            self.assembler.cmp(reg, 0)
             self.assembler.jne(if_part)
             self.assembler.jmp(else_part)
 
             #stub
             self.assembler.add_(stub)
-            self.assembler.push(eax)
-            self.assembler.mov(ebx, stub_conditional)
-            self.assembler.call(ebx)
-            self.assembler.add(esp, 4)
+            self.call(stub_conditional, cond)
+            self.assembler.mov(reg, eax)
             self.assembler.jmp(test)
 
 
@@ -603,7 +601,7 @@ class Compiler:
 
         if node.update:
             self.compile_node(node.update)
-            self.frame.pop(eax)
+            self.frame.pop()
 
         self.assembler.jmp(start)
         self.assembler.add_(end)
@@ -861,10 +859,10 @@ class Compiler:
             self.box(arg, self.frame.scratch)
             self.assembler.push(self.frame.scratch)
 
-        self.assembler.mov(self.frame.scratch, function)
-
+        self.frame.spill_all()
         #self.frame.take_reg(eax) todo scratch is eax for now
 
+        self.assembler.mov(self.frame.scratch, function)
         self.assembler.call(self.frame.scratch)
         self.assembler.add(esp, len(args) * 4)
 

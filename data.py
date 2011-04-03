@@ -22,7 +22,7 @@ class BoxedInt(Structure):
 
     def setBool(self, v):
         assert isinstance(v, bool)
-        self.value = (v << 1)
+        self.value = (v << 1) | 1
 
     def isNull(self):
         return self.value == null_value
