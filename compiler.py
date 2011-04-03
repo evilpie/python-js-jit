@@ -3,7 +3,7 @@ from ctypes import *
 from pyasm import Program, Label
 import pyasm.instructions
 from pyasm.instructions import *
-from pyasm.registers import al, ah, eax, esp, ebp, ebx, edx, ecx, xmm0, xmm1
+from pyasm.registers import DWordRegister, al, ah, eax, esp, ebp, ebx, edx, ecx, xmm0, xmm1, xmm2, xmm3
 from pyasm.base import Address
 from pyasm.data import function, String
 
@@ -12,22 +12,129 @@ from jsparser import parse
 from struct import *
 from data import *
 
+
+class FrameValue:
+
+    def __init__(self, frame):
+        self.frame = frame
+        self.constant = False
+        self.reg = None
+
+    def set_constant(self, v, type):
+        self.constant = True
+        self.type = type
+        self.value = v
+
+    def set_register(self, reg, type):
+        self.reg = reg
+        self.type = type
+
+    def is_constant(self):
+        return self.constant
+
+    def in_reg(self):
+        return self.reg
+
+    def is_int(self):
+        return self.type == 'int'
+    def is_double(self):
+        return self.type == 'double'
+    def is_string(self):
+        return self.type == 'string'
+    def is_object(self):
+        return self.type == 'object'
+    def is_null(self):
+        return self.type == 'null'
+    def is_undefined(self):
+        return self.type == 'undefined'
+    def is_bool(self):
+        return self.type == 'bool'
+    def is_unknown(self):
+        return self.type == 'unknown'
+
+
+    def to_reg(self):
+        assert not self.is_constant()
+        if self.in_reg():
+            return self.reg
+        else:
+            self.reg = self.frame.find_reg()
+            return self.reg
+
+
+
 class Frame:
+    normal_regs = [ebx, ecx, edx]
+    double_regs = [xmm0, xmm1, xmm2, xmm3]
+    scratch = eax
+
     def __init__(self, assembler):
         self.assembler = assembler
-        self.last = None
         self.stack = []
 
-    def push(self, type, register):
-        self.assembler.push(register)
-        self.stack.append(type)
+        self.free = Frame.normal_regs[:]
 
-    def pop(self, register):
-        self.assembler.pop(register)
-        return self.stack.pop()
+    def find_reg(self):
+        if self.free:
+            return self.free.pop()
+        else:
+            raise 'foo'
+
+    def take_reg(self, register):
+        if register in self.free:
+            self.free.remov(register)
+        else:
+            raise 'foo'
+
+    def free_reg(self, register):
+        assert register not in self.free
+        assert isinstance(register, DWordRegister)
+
+        self.free.append(register)
+
+    def push(self, type, register):
+        v = FrameValue(self)
+        v.set_register(register, type)
+        self.stack.append(v)
+
+    def push_string(self, value):
+        v = FrameValue(self)
+        v.set_constant(value, 'string')
+        self.stack.append(v)
+
+    def push_int(self, value):
+        v = FrameValue(self)
+        v.set_constant(value, 'int')
+        self.stack.append(v)
+
+    def push_double(self, value):
+        v = FrameValue(self)
+        v.set_constant(value, 'double')
+        self.stack.append(v)
+
+    def push_undefined(self):
+        v = FrameValue(self)
+        v.set_constant(3, 'undefined')
+        self.stack.append(v)
+
+    def push_null(self):
+        v = FrameValue(self)
+        v.set_constant(2, 'null')
+        self.stack.append(v)
+
+    def push_bool(self, value):
+        v = FrameValue(self)
+        value = int(bool(value))
+        v.set_constant(value, 'bool')
+        self.stack.append(v)
 
     def peek(self, index):
         return self.stack[index]
+
+    def pop(self):
+        v = self.stack[-1]
+        if v.in_reg():
+            self.free_reg(v.reg)
 
 
 class AssemblerWrapper:
@@ -99,30 +206,38 @@ class Compiler:
 
         return self.assembler.compile()
 
+    def box(self, v, target):
+        if v.is_constant():
+            if v.is_int():
+                self.assembler.mov(target, integer_value(v.value))
+            elif v.is_double():
+                double = new_double(v.value)
+                self.assembler.mov(target, object_value(double))
+            else:
+                self.assembler.mov(target, object_value(v.value))
+        else:
+            if v.is_int():
+                reg = v.to_reg()
+                self.assembler.shl(reg, 1)
+                self.assembler.mov(target, reg)
+            elif v.is_double():
+                assert False
+            elif v.is_unknown():
+                reg = v.to_reg()
+                self.assembler.mov(target, reg)
+            else:
+                reg = v.to_reg()
+                self.assembler.shl(reg, 1)
+                self.assembler.add(reg, 1)
+                self.assembler.mov(target, reg)
+
     def compile_node(self, node):
         getattr(self, 'op_' + node.type.lower())(node)
-
-    def box(self, type, register):
-        if type == 'unknown':
-            pass # already boxed
-        else:
-            if type == 'int':
-                self.assembler.shl(register, 1)
-            else:
-                self.assembler.shl(register, 1)
-                self.assembler.add(register, 1)
-
-    def unbox(self, register):
-        self.assembler.sar(register, 1)
-
-    def jump_not_int(self, register, jump):
-        self.assembler.test(register, 1)
-        self.assembler.jnz(jump)
 
     def op_comma(self, nodes):
         for node in nodes[:-1]:
             self.compile_node(node)
-            self.frame.pop(eax)
+            self.frame.pop()
 
         self.compile_node(nodes[-1])
 
@@ -137,20 +252,19 @@ class Compiler:
     def op_semicolon(self, node):
         self.compile_node(node.expression)
 
-        type = self.frame.pop(eax)
-        self.box(type, eax)
-        self.assembler.mov(ebx, addressof(self.return_value))
-        self.assembler.mov(ebx.addr + 0, eax)
+        v = self.frame.peek(-1)
+
+        self.assembler.mov(edx, addressof(self.return_value))
+        self.box(v, edx.addr)
+
 
     def op_number(self, node):
         value = node.value
 
         if isinstance(value, int):
-            self.frame.push('int', value)
+            self.frame.push_int(value)
         else:
-            double = new_double(value)
-            self.constant_pool.append(double)
-            self.frame.push('double', addressof(double))
+            self.frame.push_double(value)
 
     def op_string(self, node):
         value = node.value
@@ -158,6 +272,15 @@ class Compiler:
         str = new_string(value)
         self.constant_pool.append(str)
         self.frame.push('string', addressof(str))
+
+    def op_true(self, node):
+        self.frame.push_bool(True)
+
+    def op_false(self, node):
+        self.frame.push_bool(False)
+
+    def op_null(self, node):
+        self.frame.push_null()
 
     def op_array_init(self, nodes):
         for node in nodes:
@@ -196,22 +319,39 @@ class Compiler:
     def op_unary_minus(self, node):
         self.compile_node(node[0])
 
-        lhs = self.frame.pop(eax)
-        if lhs == 'int':
-            self.assembler.neg(eax)
-            self.frame.push('int', eax)
+        lhs = self.frame.peek(-1)
+        if lhs.is_constant():
+            self.frame.pop()
+
+            if lhs.is_int():
+                self.frame.push_int(-lhs.value)
+            elif lhs.is_double():
+                self.frame.push_double(-lhs.value)
+            elif lhs.is_string():
+                new = self.rt.sub(boxed_integer(0), boxed_object(lhs))
+                if new.isInteger():
+                    self.frame.push_int(new.toInteger())
+                else:
+                    self.frame.push_double(new.toObject().to(PrimitiveDouble).value)
+            elif lhs.is_null():
+                self.frame.push_double(-0)
+            elif lhs.is_undefined():
+                self.frame.push_double(float('nan'))
+
+            return
+
+
+        if lhs.is_int():
+            reg = lhs.to_reg()
+            self.frame.pop()
+
+            self.assembler.neg(reg)
+            self.frame.push('int', reg)
         elif lhs == 'double':
+            reg = lhs.to_double_reg()
+            self.frame.pop()
 
-            self.assembler.bytes(0x0f, 0x10, 0x00)          #movups xmm0, [eax]
-            self.assembler.pxor(xmm1, xmm1)                 #pxor xmm1, xmm1
-            self.assembler.bytes(0x66, 0x0f, 0x5c, 0xc8)    #subpd xmm1, xmm0
-            self.assembler.bytes(0x0f, 0x11, 0x08)          #movups [eax], xmm1
-
-            self.frame.push('double', eax)
-        elif lhs == 'null':
-            self.frame.push('double', addressof(self.rt.doubles['negative_zero']))
-        elif lhs == 'undefined':
-            self.frame.push('double', addressof(self.rt.doubles['NaN']))
+            assert False
         else:
 
             self.box(lhs, eax)
@@ -232,8 +372,19 @@ class Compiler:
         self.compile_node(node[0])
 
         lhs = self.frame.peek(-1)
-        if lhs in ['int', 'double']:
-            return # nothing to do here
+        if lhs.is_constant():
+            if lhs.is_int() or lhs.is_double():
+                pass # nothing to do
+            elif lhs.is_null():
+                self.frame.pop()
+                self.frame.push_int(0)
+            elif lhs.is_undefined():
+                self.frame.pop()
+                self.frame.push_double(float('nan'))
+            else:
+                assert False # todo
+
+            return
 
         lhs = self.frame.pop(eax)
         if lhs == 'bool':
@@ -269,60 +420,59 @@ class Compiler:
     def op_not(self, node):
         self.compile_node(node[0])
 
-        lhs = self.frame.pop(eax)
-        if lhs == 'bool':
-            self.assembler.xor(eax, 1)
-            self.frame.push('bool', eax)
-        elif lhs == 'int':
-            end = Label('end')
+        lhs = self.frame.peek(-1)
 
-            self.assembler.cmp(eax, 0)
-            self.assembler.xor(eax, eax)
-            self.assembler.jne(end)
-            self.assembler.mov(eax, 1)
-            self.assembler.add_(end)
+        if lhs.is_constant():
+            self.frame.pop()
 
-            self.frame.push('bool', eax)
-        elif lhs == 'null' or lhs == 'undefined':
-            self.frame.push('bool', 1)
-        elif lhs == 'object':
-            self.frame.push('bool', 0)
-        else:
-
-            @function(c_int, BoxedInt)
-            def not_(lhs):
-                v = self.rt.toBoolean(lhs)
-                if v.value == true_value:
-                    return 0
+            if lhs.is_bool():
+                self.frame.push_bool(not lhs.value)
+            elif lhs.is_int():
+                self.frame.push_bool(lhs.value == 0)
+            elif lhs.is_double():
+                if math.isnan(lhs.value):
+                    self.frame.push_bool(True)
                 else:
-                    return 1
+                    self.frame.push_bool(lhs.value == 0)
+            elif lhs.is_null() or lhs.is_undefined():
+                self.frame.push_bool(True)
+            elif lhs.is_object():
+                self.frame.push_bool(False)
+            else:
+                raise NotImplementedError('op not')
+        elif lhs.is_object():
+            self.frame.pop()
+            self.frame.push_bool(False)
+        else:
+            reg = lhs.to_reg()
+            if lhs.is_bool():
+                self.assembler.xor(reg, 1)
+            elif lhs.is_int():
+                self.assembler.cmp(reg, 0)
+                self.assembler.xor(reg, reg)
+                self.assembler.jne(end)
+                self.assembler.mov(reg, 1)
+                self.assembler.add_(end)
+            else:
+                raise NotImplementedError('op not')
 
-            self.box(lhs, eax)
-            self.assembler.push(eax)
-            self.assembler.mov(eax, not_)
-            self.assembler.call(eax)
-            self.assembler.add(esp, 4)
-
-            self.frame.push('bool', eax)
+            self.frame.pop()
+            self.assembler.push('bool', reg)
 
     def op_void(self, node):
         self.compile_node(node[0])
 
-        lhs = self.frame.pop(eax)
+        lhs = self.frame.peek(-1)
 
         @function(None, BoxedInt)
         def log(v):
             print 'void stub (logging)'
             dump_boxed_int(v)
 
-        self.box(lhs, eax)
+        self.call(log, lhs)
 
-        self.assembler.push(eax)
-        self.assembler.mov(eax, log)
-        self.assembler.call(eax)
-        self.assembler.add(esp, 4)
-
-        self.frame.push('undefined', 3)
+        self.frame.pop()
+        self.frame.push_undefined()
 
     def op_plus(self, node):
         self.op_binary(node, 'add')
@@ -393,15 +543,6 @@ class Compiler:
         self.assembler.add(esp, 8)
 
         self.frame.push('unknown', eax)
-
-    def op_true(self, node):
-        self.frame.push('bool', 1)
-
-    def op_false(self, node):
-        self.frame.push('bool', 0)
-
-    def op_null(self, node):
-        self.frame.push('null', 2)
 
     def op_eq(self, node):
         self.compile_node(node[0])
@@ -632,11 +773,10 @@ class Compiler:
             index = self.vars[name]
 
             self.compile_node(node.initializer)
-            rhs = self.frame.pop(eax)
+            rhs = self.frame.peek(-1)
 
-            self.box(rhs, eax)
-            self.assembler.mov(ebx, addressof(self.var_space))
-            self.assembler.mov(ebx.addr + index * 4, eax)
+            self.assembler.mov(self.frame.scratch, addressof(self.var_space))
+            self.box(rhs, self.frame.scratch.addr)
 
     def assign_identifier(self, node):
         name = node[0].value
@@ -710,10 +850,11 @@ class Compiler:
 
         index = self.vars[name]
 
-        self.assembler.mov(ebx, addressof(self.var_space))
-        self.assembler.mov(eax, ebx.addr + index * 4)
+        reg = self.frame.find_reg()
+        self.assembler.mov(self.frame.scratch, addressof(self.var_space))
+        self.assembler.mov(reg, self.frame.scratch.addr)
 
-        self.frame.push('unknown', eax)
+        self.frame.push('unknown', reg)
 
     def op_dot(self, node):
         self.compile_node(node[0])
@@ -791,31 +932,44 @@ class Compiler:
     def op_typeof(self, node):
         self.compile_node(node[0])
 
-        type = self.frame.pop(eax)
-        if type == 'int' or type == 'double':
-            self.frame.push('string', addressof(self.rt.strings['number']))
-        elif type == 'null':
-            self.frame.push('string', addressof(self.rt.strings['null']))
-        elif type == 'bool':
-            self.frame.push('string', addressof(self.rt.strings['boolean']))
-        elif type == 'string':
-            self.frame.push('string', addressof(self.rt.strings['string']))
+        t = self.frame.peek(-1)
+        if not t.is_unknown() and not t.is_object():
+            self.frame.pop()
+            if t.is_null():
+                str = self.rt.strings['null']
+            elif t.is_undefined():
+                str = self.rt.strings['undefined']
+            elif t.is_int() or t.is_double():
+                str = self.rt.strings['number']
+            elif t.is_string():
+                str = self.rt.strings['string']
+
+            self.frame.push_string(addressof(str))
         else:
+
             @function(c_int, BoxedInt)
             def typeof(v):
-                str = self.rt.typeof(v)
-                return addressof(str)
+                return addressof(self.rt.strings['object']) # todo
 
-            self.box(type, eax)
-            self.assembler.push(eax)
-            self.assembler.mov(ebx, typeof)
-            self.assembler.call(ebx)
-            self.assembler.add(esp, 4)
-
+            self.call(typeof, t)
             self.frame.push('string', eax)
 
     def op_nop(self, node):
         pass
+
+    def call(self, function, *args):
+
+        for arg in args[::-1]:
+            self.box(arg, self.frame.scratch)
+            self.assembler.push(self.frame.scratch)
+
+        self.assembler.mov(self.frame.scratch, function)
+
+        #self.frame.take_reg(eax) todo scratch is eax for now
+
+        self.assembler.call(self.frame.scratch)
+        self.assembler.add(esp, len(args) * 4)
+
 
 def main():
     import sys
@@ -829,8 +983,8 @@ def main():
     compiler = Compiler(asm, runtime)
 
     ast = parse(code)
+    print ast
 
-    raw_input()
     fptr = compiler.compile(ast)
     fptr()
 
