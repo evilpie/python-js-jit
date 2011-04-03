@@ -559,13 +559,10 @@ class Compiler:
 
     def increment_identifier(self, node, amount):
         self.op_identifier(node[0])
+        if hasattr(node, 'postfix'):
+            self.op_identifier(node[0])
 
-        if node.postfix:
-            type = self.frame.pop(eax)
-            self.frame.push(type, eax)
-            self.frame.push(type, eax)
-
-        self.frame.push('int', amount)
+        self.frame.push_int(amount)
 
         class Nop:
             type = 'NOP'
@@ -580,8 +577,9 @@ class Compiler:
             1 : Nop
         })
 
-        if node.postfix:
-            self.frame.pop(eax)
+        if hasattr(node, 'postfix'):
+            self.frame.pop()
+
 
     def op_assign(self, node):
         type = node[0].type.lower()
