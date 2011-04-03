@@ -170,7 +170,6 @@ def number_value(number):
     return boxed_number(number).value
 
 def boxed_number(number):
-
     try:
         if int(number) == number:
             return boxed_integer(number)

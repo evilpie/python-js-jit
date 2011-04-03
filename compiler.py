@@ -61,7 +61,19 @@ class FrameValue:
             self.reg = self.frame.find_reg()
             return self.reg
 
+    def to_boxed_int(self):
+        assert self.is_constant()
 
+        if self.is_int() or self.is_double():
+            return boxed_number(self.value)
+        elif self.is_string() or self.is_object():
+            return boxed_object(self.value)
+        elif self.is_bool():
+            return boxed_bool(self.value)
+        elif self.is_null():
+            return BoxedInt(null_value)
+        elif self.is_undefined():
+            return BoxedInt(undefined_value)
 
 class Frame:
     normal_regs = [ebx, ecx, edx]
@@ -126,6 +138,26 @@ class Frame:
         v = FrameValue(self)
         value = int(bool(value))
         v.set_constant(value, 'bool')
+        self.stack.append(v)
+
+    def push_boxed_int(self, value):
+        v = FrameValue(self)
+        if value.isInteger():
+            v.set_constant(value.toInteger(), 'int')
+        elif value.isBool():
+            v.set_constant(value.toInteger(), 'bool')
+        elif value.isNull():
+            v.set_constant(2, 'null')
+        elif value.isUndefined():
+            v.set_constant(3, 'undefined')
+        else:
+            obj = value.toObject()
+            if obj.isDouble():
+                v.set_constant(obj.toPrimitive(), 'double')
+            elif obj.isString():
+                v.set_constant(addressof(obj), 'string')
+            else:
+                v.set_constant(addressof(obj), 'object')
         self.stack.append(v)
 
     def peek(self, index):
@@ -372,50 +404,29 @@ class Compiler:
         self.compile_node(node[0])
 
         lhs = self.frame.peek(-1)
+
+        if lhs.is_int() or lhs.is_double():
+            return # nothing to do
+
         if lhs.is_constant():
-            if lhs.is_int() or lhs.is_double():
-                pass # nothing to do
-            elif lhs.is_null():
+            if lhs.is_null():
                 self.frame.pop()
                 self.frame.push_int(0)
             elif lhs.is_undefined():
                 self.frame.pop()
                 self.frame.push_double(float('nan'))
+            elif lhs.is_bool():
+                self.frame.pop()
+                self.frame.push_int(0 + lhs.value)
             else:
-                assert False # todo
-
-            return
-
-        lhs = self.frame.pop(eax)
-        if lhs == 'bool':
-            self.frame.push('int', eax) # true is 1 and false is 0 already
-        elif lhs == 'null':
-            self.frame.push('int', 0)
-        elif lhs == 'undefined':
-            self.frame.push('double', addressof(self.rt.doubles['NaN']))
+                raise NotImplementedError('op unary plus constant folding')
         else:
-            @function(c_int, BoxedInt)
-            def unary_plus(lhs):
-                print 'stub unary plus'
-                return self.rt.toNumber(lhs).value
-
-            stub = Label('stub')
-            end = Label('end')
-
-            if lhs == 'unknown':
-                self.jump_not_int(eax, stub)
-                self.assembler.jmp(end) # nothing to do already int
-
-            self.assembler.add_(stub)
-            self.box(lhs, eax)
-            self.assembler.push(eax)
-            self.assembler.mov(eax, unary_plus)
-            self.assembler.call(eax)
-            self.assembler.add(esp, 4)
-
-            self.assembler.add_(end)
-            self.frame.push('unknown', eax)
-
+            reg = lhs.to_reg()
+            if lhs.is_bool():
+                self.frame.pop()
+                self.frame.push('int', eax) # true is 1 and false is 0 already
+            else:
+                raise NotImplementedError('op unary plus')
 
     def op_not(self, node):
         self.compile_node(node[0])
@@ -483,8 +494,17 @@ class Compiler:
         self.compile_node(node[0])
         self.compile_node(node[1])
 
-        rhs = self.frame.pop(ebx)
-        lhs = self.frame.pop(eax)
+        rhs = self.frame.peek(-1)
+        lhs = self.frame.peek(-2)
+
+        if lhs.is_constant() and rhs.is_constant():
+            value = getattr(self.rt, op)(lhs.to_boxed_int(), rhs.to_boxed_int())
+
+            self.frame.pop()
+            self.frame.pop()
+            self.frame.push_boxed_int(value)
+
+        return # todo
 
         if lhs == rhs == 'int':
             getattr(self.assembler, op)(eax, ebx)
@@ -949,7 +969,7 @@ class Compiler:
 
             @function(c_int, BoxedInt)
             def typeof(v):
-                return addressof(self.rt.strings['object']) # todo
+                return addressof(self.rt.typeof(v))
 
             self.call(typeof, t)
             self.frame.push('string', eax)
