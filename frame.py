@@ -14,8 +14,8 @@ class FrameValue:
         self.value = v
 
     def set_register(self, reg, type):
-        self.reg = reg
         self.type = type
+        self.reg = reg
 
     def is_constant(self):
         return self.constant
@@ -49,9 +49,9 @@ class FrameValue:
             self.reg = None
 
     def spill(self, forget=False):
-        print 'spill', self.reg, self.memory, self.constant
         if self.in_memory():
             return
+
         index = self.frame.spill_index
         if self.in_reg():
             self.frame.assembler.mov(esi.addr + index * 4, self.reg)
@@ -59,6 +59,7 @@ class FrameValue:
         else:
             assert self.is_constant()
             self.frame.assembler.mov(esi.addr + index * 4, self.to_boxed_int().value)
+
         self.reg = None
         self.constant = False
         self.memory = index
@@ -68,9 +69,6 @@ class FrameValue:
         self.frame.spill_index += 1
 
     def to_reg(self):
-
-        print 'to reg', self.reg, self.memory, self.constant
-
         assert not self.is_constant()
         if self.in_reg():
             return self.reg
@@ -119,17 +117,17 @@ class Frame:
                 if v.in_reg():  # spill oldest
                     reg = v.reg
                     v.spill()
-                    self.free.remove(reg)
                     return reg
+            raise Error('should never happen')
 
     def take_reg(self, register):
         if register in self.free:
-            self.free.remov(register)
+            self.free.remove(register)
         else:
             for v in self.stack:
                 if v.reg == register:
                     v.spill()
-            self.free.remov(register)
+            self.free.remove(register)
 
     def free_reg(self, register):
         assert register not in self.free
@@ -138,13 +136,13 @@ class Frame:
         self.free.append(register)
 
     def spill_all(self, forget=False):
-        print 'spill all', self.stack
         for v in self.stack:
             v.spill(forget=forget)
 
     def push(self, type, register):
         v = FrameValue(self)
         v.set_register(register, type)
+        assert register not in self.free
         self.stack.append(v)
 
     def push_string(self, value):

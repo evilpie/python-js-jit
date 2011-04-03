@@ -19,7 +19,7 @@ class AssemblerWrapper:
         self.assembler = assembler
 
         for op in dir(pyasm.instructions):
-            if op.startswith('__') or op == 'mov':
+            if op.startswith('__'):
                 continue
 
             def wrapper(op):
@@ -32,13 +32,6 @@ class AssemblerWrapper:
 
     def add_(self, a):
         self.assembler.add(a)
-
-    def mov(self, a, b):
-        print 'mov', a, b
-        if a is None or b is None:
-            raise Error('omg')
-
-        self.assembler.add(pyasm.instructions.mov(a, b))
 
     def compile(self, *args):
         return self.assembler.compile(*args)
@@ -88,15 +81,9 @@ class Compiler:
 
         self.op_block(ast)
 
-        v = self.frame.peek(-1)
-        self.assembler.mov(self.frame.scratch, addressof(self.return_value))
-        self.box(v, self.frame.scratch.addr)
-
         self.assembler.pop(esi)
         self.assembler.pop(ebp)
         self.assembler.ret()
-
-        print self.assembler.assembler
 
         self.spill_memory = (c_int * self.frame.spill_index)()
         self.ptr_to_spill.value = addressof(self.spill_memory)
@@ -145,7 +132,6 @@ class Compiler:
         self.compile_node(nodes[-1])
 
     def op_block(self, nodes):
-        t = None
         for node in nodes:
             self.compile_node(node)
 
@@ -154,6 +140,7 @@ class Compiler:
 
     def op_semicolon(self, node):
         self.compile_node(node.expression)
+        self.frame.pop()
 
     def op_number(self, node):
         value = node.value
@@ -186,8 +173,6 @@ class Compiler:
 
         @function(c_int, c_int)
         def array_init(size):
-            print 'stub array init', size
-
             obj = new_array(size)
             self.constant_pool.append(obj)
 
@@ -255,26 +240,16 @@ class Compiler:
 
             self.assembler.neg(reg)
             self.frame.push('int', reg)
-        elif lhs == 'double':
-            reg = lhs.to_double_reg()
-            self.frame.pop()
-
-            assert False
         else:
-
-            self.box(lhs, eax)
-
             @function(c_int, BoxedInt)
             def unary_minus(lhs):
                 return self.rt.sub(boxed_integer(0), lhs).value
 
-            self.box(lhs, eax)
-            self.assembler.push(eax)
-            self.assembler.mov(eax, unary_minus)
-            self.assembler.call(eax)
-            self.assembler.add(esp, 4)
+            self.call(unary_minus, lhs)
 
-            self.frame.push('unknown', eax)
+            result = self.frame.alloc_reg()
+            self.assembler.mov(result, eax)
+            self.frame.push('unknown', result)
 
     def op_unary_plus(self, node):
         self.compile_node(node[0])
@@ -348,7 +323,6 @@ class Compiler:
 
     def op_void(self, node):
         self.compile_node(node[0])
-
         lhs = self.frame.peek(-1)
 
         @function(None, BoxedInt)
@@ -379,40 +353,17 @@ class Compiler:
             self.frame.pop()
             self.frame.pop()
             self.frame.push_boxed_int(value)
-
-        return # todo
-
-        if lhs == rhs == 'int':
-            getattr(self.assembler, op)(eax, ebx)
-            self.frame.push('int', eax)
             return
-        elif lhs == rhs == 'double':
-            self.assembler.bytes(0x0f, 0x10, 0x00)          #movups xmm0, [eax]
-            self.assembler.bytes(0x0f, 0x10, 0x0b)          #movups xmm1, [ebx]
-            getattr(self.assembler, op + 'pd')(xmm1, xmm0)  #subpd xmm1, xmm0
-            self.assembler.bytes(0x0f, 0x11, 0x08)          #movups [eax], xmm1
 
-            self.frame.push('double', eax)
-            return
-        elif lhs in ['int', 'double'] and rhs in ['int', 'double']:
-            if lhs == 'int':
-                self.assembler.cvtsi2ss(xmm0, eax)
-            else:
-                self.assembler.bytes(0x0f, 0x10, 0x00) #movups xmm0, [eax]
+        if lhs.is_int() and rhs.is_int():
+            reg1 = rhs.to_reg()
+            reg2 = lhs.to_reg()
 
-            if rhs == 'int':
-                self.assembler.cvtsi2ss(xmm1, xmm)
-            else:
-                self.assembler.bytes(0x0f, 0x10, 0x0b) #movups xmm1, [ebx]
+            getattr(self.assembler, op)(reg1, reg2)
 
-            getattr(self.assembler, op + 'pd')(xmm1, xmm0) # select operation
-
-            if lhs == 'double':
-                self.assembler.bytes(0x0f, 0x11, 0x08)  #movups [eax], xmm1
-                self.frame.push('double', eax)
-            else:
-                self.assembler.bytes(0x0f, 0x11, 0x0b)  #movups [ebx], xmm1
-                self.frame.push('double', ebx)
+            self.frame.pop()
+            self.frame.pop()
+            self.frame.push('int', reg1)
             return
 
 
@@ -429,16 +380,13 @@ class Compiler:
             'sub': sub_stub
         }
 
-        self.box(rhs, ebx)
-        self.box(lhs, eax)
+        self.call(stubs[op], lhs, rhs)
 
-        self.assembler.push(ebx)
-        self.assembler.push(eax)
-        self.assembler.mov(ecx, stubs[op])
-        self.assembler.call(ecx)
-        self.assembler.add(esp, 8)
-
-        self.frame.push('unknown', eax)
+        self.frame.pop()
+        self.frame.pop()
+        result = self.frame.alloc_reg()
+        self.assembler.mov(result, eax)
+        self.frame.push('unknown', result)
 
     def op_eq(self, node):
         self.compile_node(node[0])
@@ -516,7 +464,6 @@ class Compiler:
         cond = self.frame.peek(-1)
         if cond.is_constant():
             boolean = self.rt.toBoolean(cond.to_boxed_int())
-            print boolean.toBool()
             if boolean.toBool() == True:
                 self.compile_node(if_node)
             else:
@@ -660,7 +607,6 @@ class Compiler:
             self.compile_node(node.initializer)
             rhs = self.frame.peek(-1)
 
-
             self.assembler.mov(self.frame.scratch, addressof(self.var_space))
             self.box(rhs, self.frame.scratch.addr + index * 4)
 
@@ -675,20 +621,36 @@ class Compiler:
         index = self.vars[name]
 
         self.compile_node(node[1])
-        rhs = self.frame.pop(eax)
+        rhs = self.frame.peek(-1)
 
-        if rhs == 'unknown':
-            self.assembler.mov(ebx, addressof(self.var_space))
-            self.assembler.mov(ebx.addr + index * 4, eax)
+        if rhs.is_unknown():
+            reg = rhs.to_reg()
 
-            self.frame.push('unknown', eax)
+            self.assembler.mov(self.frame.scratch, addressof(self.var_space))
+            self.assembler.mov(self.frame.scratch.addr + index * 4, reg)
+
+            self.frame.pop()
+            self.frame.take_reg(reg) # pop would free the |reg|
+            self.frame.push('unknown', reg)
+
+        elif rhs.is_constant():
+            boxed = rhs.to_boxed_int()
+
+            self.assembler.mov(self.frame.scratch, addressof(self.var_space))
+            self.assembler.mov(self.frame.scratch.addr + index * 4, boxed.value)
+
+            self.frame.pop()
+            self.frame.push_boxed_int(boxed)
         else:
-            self.assembler.mov(edx, eax)
-            self.box(rhs, edx)
-            self.assembler.mov(ebx, addressof(self.var_space))
-            self.assembler.mov(ebx.addr + index * 4, edx)
+            reg = rhs.to_reg()
 
-            self.frame.push(rhs, eax)
+            self.box(rhs, reg)
+            self.assembler.mov(self.frame.scratch, addressof(self.var_space))
+            self.assembler.mov(self.frame.scratch.addr + index * 4, reg)
+
+            self.frame.pop()
+            self.frame.take_reg(reg)
+            self.frame.push(rhs.type, reg)
 
     def assign_index(self, node):
         self.compile_node(node[0][0])
