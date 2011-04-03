@@ -88,6 +88,10 @@ class Compiler:
 
         self.op_block(ast)
 
+        v = self.frame.peek(-1)
+        self.assembler.mov(self.frame.scratch, addressof(self.return_value))
+        self.box(v, self.frame.scratch.addr)
+
         self.assembler.pop(esi)
         self.assembler.pop(ebp)
         self.assembler.ret()
@@ -150,11 +154,6 @@ class Compiler:
 
     def op_semicolon(self, node):
         self.compile_node(node.expression)
-
-        v = self.frame.peek(-1)
-        self.assembler.mov(self.frame.scratch, addressof(self.return_value))
-        self.box(v, self.frame.scratch.addr)
-
 
     def op_number(self, node):
         value = node.value
@@ -445,19 +444,37 @@ class Compiler:
         self.compile_node(node[0])
         self.compile_node(node[1])
 
-        rhs = self.frame.pop(ecx)
-        lhs = self.frame.pop(ebx)
+        rhs = self.frame.peek(-1)
+        lhs = self.frame.peek(-2)
 
-        if lhs in ['int', 'bool'] and rhs in ['int', 'bool']:
+        if lhs.is_constant() and rhs.is_constant():
+            equal = self.rt.equality(lhs.to_boxed_int(), rhs.to_boxed_int())
+
+            self.frame.pop()
+            self.frame.pop()
+
+            if equal:
+                self.frame.push_bool(True)
+            else:
+                self.frame.push_bool(False)
+        elif (lhs.is_int() or lhs.is_bool()) and (rhs.is_int() or rhs.is_bool()):
             end = Label('end')
+            equal = Label('equal')
 
-            self.assembler.mov(eax, 1)
-            self.assembler.cmp(ecx, ebx)  # ZF = ~(a & b)
-            self.assembler.je(end)        # ZF == 0
-            self.assembler.mov(eax, 0)
+            reg1 = rhs.to_reg()
+            reg2 = lhs.to_reg()
+
+            self.assembler.cmp(reg1, reg2)
+            self.assembler.je(equal)
+            self.assembler.mov(reg1, 0)
+            self.assembler.jmp(end)
+            self.assembler.add_(equal)
+            self.assembler.mov(reg1, 1)
             self.assembler.add_(end)
 
-            self.frame.push('bool', eax)
+            self.frame.pop()
+            self.frame.pop()
+            self.frame.push('bool', reg1)
         elif lhs == rhs == 'double':
             end = Label('end')
 
@@ -478,40 +495,15 @@ class Compiler:
                 print 'stub eq'
                 return 1 if self.rt.equality(lhs, rhs) else 0
 
-            stub = Label('stub')
-            end = Label('end')
-            emit_inline_cmp = False
+            self.call(eq, lhs, rhs)
 
-            if lhs == 'unknown' and rhs in ['int', 'unknown']:
-                emit_inline_cmp = True
-                self.jump_not_int(ebx, stub)
+            self.frame.pop()
+            self.frame.pop()
 
-            if rhs == 'unknown' and lhs in ['int', 'unknown']:
-                emit_inline_cmp = True
-                self.jump_not_int(ecx, stub)
+            reg = self.frame.alloc_reg()
+            self.assembler.mov(reg, eax)
 
-            if emit_inline_cmp:
-                if lhs == 'unknown':
-                    self.unbox(ebx)
-                if rhs == 'unknown':
-                    self.unbox(ecx)
-                self.assembler.mov(eax, 1)
-                self.assembler.cmp(ecx, ebx)
-                self.assembler.je(end)
-                self.assembler.mov(eax, 0)
-                self.assembler.jmp(end)
-
-            self.assembler.add_(stub)
-            self.box(rhs, ecx)
-            self.assembler.push(ecx)
-            self.box(lhs, ebx)
-            self.assembler.push(ebx)
-            self.assembler.mov(eax, eq)
-            self.assembler.call(eax)
-            self.assembler.add(esp, 8)
-            self.assembler.add_(end)
-
-            self.frame.push('bool', eax)
+            self.frame.push('bool', reg)
 
 
     def conditional(self, cond_node, if_node, else_node, else_jump=None):

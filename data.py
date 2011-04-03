@@ -242,7 +242,7 @@ def dump_boxed_int(b):
         obj = b.toObject()
         if obj.isPrimitive():
             if obj.isString():
-                print '[string] ', obj.toPrimitive()
+                print '[string] "' + obj.toPrimitive() + '"'
             else:
                 print '[double] ', obj.toPrimitive()
         else:

@@ -172,7 +172,9 @@ class Runtime:
             rvalue = right.toObject().to(PrimitiveString).str
             return lvalue == rvalue
 
-        return self.toNumber(left) == self.toNumber(right)
+        lvalue = self.toNumber(left)
+        rvalue = self.toNumber(right)
+        return self.numberConvert(lvalue) == self.numberConvert(rvalue)
 
 
     def add(self, left, right):
