@@ -25,7 +25,8 @@ edx = DWordRegister('edx', 2)
 ebx = DWordRegister('ebx', 3)
 esp = DWordRegister('esp', 4)
 ebp = DWordRegister('ebp', 5)
-
+esi = DWordRegister('esi', 6)
+edi = DWordRegister('edi', 7)
 
 rax = QWordRegister('rax', 0)
 rsi = QWordRegister('rsi', 6)
