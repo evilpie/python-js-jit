@@ -341,9 +341,7 @@ class Compiler:
             self.frame.pop()
             self.frame.pop()
             self.frame.push_boxed_int(value)
-            return
-
-        if lhs.is_int() and rhs.is_int():
+        elif lhs.is_int() and rhs.is_int():
             reg1 = rhs.to_reg()
             reg2 = lhs.to_reg()
 
@@ -352,29 +350,75 @@ class Compiler:
             self.frame.pop()
             self.frame.pop()
             self.frame.push('int', reg1)
-            return
+        else:
 
+            @function(c_int, BoxedInt, BoxedInt)
+            def add_stub(lhs, rhs):
+                print 'add stub'
+                return self.rt.add(lhs, rhs).value
 
-        @function(c_int, BoxedInt, BoxedInt)
-        def add_stub(lhs, rhs):
-            return self.rt.add(lhs, rhs).value
+            @function(c_int, BoxedInt, BoxedInt)
+            def sub_stub(lhs, rhs):
+                print 'sub stub'
+                return self.rt.sub(lhs, rhs).value
 
-        @function(c_int, BoxedInt, BoxedInt)
-        def sub_stub(lhs, rhs):
-            return self.rt.sub(lhs, rhs).value
+            result = self.frame.alloc_reg()
+            types = ['int', 'unknown']
+            stub = Label('stub')
+            end = Label('end')
 
-        stubs = {
-            'add': add_stub,
-            'sub': sub_stub
-        }
+            if lhs.type in types and rhs.type in types:
+                    reg1 = reg2 = None
+                    not_equal = Label('not equal')
 
-        self.call(stubs[op], lhs, rhs)
+                    if rhs.is_unknown():
+                        reg1 = rhs.to_reg()
+                        self.jump_not_int(reg1, stub)
+                    elif not rhs.is_constant():
+                        reg1 = rhs.to_reg()
 
-        self.frame.pop()
-        self.frame.pop()
-        result = self.frame.alloc_reg()
-        self.assembler.mov(result, eax)
-        self.frame.push('unknown', result)
+                    if lhs.is_unknown():
+                        reg2 = lhs.to_reg()
+                        self.jump_not_int(reg2, stub)
+                    elif not rhs.is_constant():
+                        reg2 = lhs.to_reg()
+
+                    if reg1 is not None and reg2 is not None:
+                        self.assembler.sar(reg1, 1)
+                        self.assembler.sar(reg2, 1)
+                        self.assembler.mov(result, reg1)
+                        getattr(self.assembler, op)(result, reg2)
+                        self.assembler.shl(result, 1)
+
+                    if reg1 is None:
+                        assert isinstance(rhs.value, int)
+                        self.assembler.sar(reg2, 1)
+                        self.assembler.mov(result, rhs.value)
+                        getattr(self.assembler, op)(result, reg2)
+                        self.assembler.shl(result, 1)
+
+                    if reg2 is None:
+                        assert isinstance(lhs.value, int)
+                        self.assembler.sar(reg1, 1)
+                        self.assembler.mov(result, lhs.value)
+                        getattr(self.assembler, op)(result, reg1)
+                        self.assembler.shl(result, 1)
+
+                    self.assembler.jmp(end)
+
+            stubs = {
+                'add': add_stub,
+                'sub': sub_stub
+            }
+
+            self.assembler.add_(stub)
+            self.call(stubs[op], lhs, rhs)
+            self.assembler.mov(result, eax)
+            self.assembler.add_(end)
+
+            self.frame.pop()
+            self.frame.pop()
+            self.frame.push('unknown', result)
 
     def op_eq(self, node):
         self.compile_node(node[0])
@@ -446,12 +490,12 @@ class Compiler:
 
                 if reg1 is None:
                     assert isinstance(rhs.value, int)
-                    self.assembler.mov(reg, rhs.value)
+                    self.assembler.mov(reg, rhs.value << 1)
                     self.assembler.cmp(reg, reg2)
 
                 if reg2 is None:
                     assert isinstance(lhs.value, int)
-                    self.assembler.mov(reg, lhs.value)
+                    self.assembler.mov(reg, lhs.value << 1)
                     self.assembler.cmp(reg, reg1)
 
                 self.assembler.mov(reg, 1)
@@ -565,28 +609,35 @@ class Compiler:
         type = node[0].type.lower()
 
         if type == 'identifier':
-            self.increment_identifier(node, -1)
+            self.increment_identifier(node, 1)
 
     def op_decrement(self, node):
         type = node[0].type.lower()
 
         if type == 'identifier':
-            self.increment_identifier(node, 1)
+            self.increment_identifier(node, -1)
 
     def increment_identifier(self, node, amount):
         self.op_identifier(node[0])
         if hasattr(node, 'postfix'):
             self.op_identifier(node[0]) # todo this should be self.frame.duplicate or simliar
 
-        self.frame.push_int(amount)
+        self.frame.push_int(1)
 
         class Nop:
             type = 'NOP'
 
-        self.op_minus({
-            0 : Nop,
-            1 : Nop
-        })
+        if amount > 0:
+            self.op_plus({
+                0 : Nop,
+                1 : Nop
+            })
+        else:
+            self.op_minus({
+                0 : Nop,
+                1 : Nop
+            })
+
 
         self.op_assign({
             0 : node[0],
