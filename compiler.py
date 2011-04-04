@@ -214,25 +214,12 @@ class Compiler:
         lhs = self.frame.peek(-1)
         if lhs.is_constant():
             self.frame.pop()
-
-            if lhs.is_int():
-                self.frame.push_int(-lhs.value)
-            elif lhs.is_double():
-                self.frame.push_double(-lhs.value)
-            elif lhs.is_string():
-                new = self.rt.sub(boxed_integer(0), boxed_object(lhs))
-                if new.isInteger():
-                    self.frame.push_int(new.toInteger())
-                else:
-                    self.frame.push_double(new.toObject().to(PrimitiveDouble).value)
-            elif lhs.is_null():
-                self.frame.push_double(-0)
-            elif lhs.is_undefined():
-                self.frame.push_double(float('nan'))
+            value = self.rt.sub(boxed_integer(0, lhs.to_boxed_int()))
+            self.push_boxed_int(value)
         elif lhs.is_int():
             reg = lhs.to_reg()
             self.frame.pop()
-
+            self.frame.take_reg(reg)
             self.assembler.neg(reg)
             self.frame.push('int', reg)
         else:
@@ -257,24 +244,27 @@ class Compiler:
             return # nothing to do
 
         if lhs.is_constant():
-            if lhs.is_null():
-                self.frame.pop()
-                self.frame.push_int(0)
-            elif lhs.is_undefined():
-                self.frame.pop()
-                self.frame.push_double(float('nan'))
-            elif lhs.is_bool():
-                self.frame.pop()
-                self.frame.push_int(0 + lhs.value)
-            else:
-                raise NotImplementedError('op unary plus constant folding')
+            self.frame.pop()
+            value = self.rt.toNumber(lhs.to_boxed_int())
+            self.frame.push_boxed_int(value)
         else:
             reg = lhs.to_reg()
             if lhs.is_bool():
                 self.frame.pop()
-                self.frame.push('int', eax) # true is 1 and false is 0 already
+                self.frame.take_reg(reg)
+                self.frame.push('int', reg) # true is 1 and false is 0 already
             else:
-                raise NotImplementedError('op unary plus')
+                @function(c_int, BoxedInt)
+                def unary_plus(lhs):
+                    return self.rt.toNumber(lhs).value
+
+                self.call(unary_plus, lhs)
+
+                result = self.frame.alloc_reg()
+                self.assembler.mov(result, eax)
+
+                self.frame.pop()
+                self.frame.push('unknown', result)
 
     def op_not(self, node):
         self.compile_node(node[0])
@@ -420,39 +410,69 @@ class Compiler:
 
             self.frame.pop()
             self.frame.pop()
+            self.frame.take_reg(reg1)
             self.frame.push('bool', reg1)
-        elif lhs == rhs == 'double':
-            end = Label('end')
-
-            #todo: fix for NaN
-            self.assembler.mov(eax, ebx.addr + 4)
-            self.assembler.mov(edx, ecx.addr + 4)
-            self.assembler.mov(ebx, 1)
-            self.assembler.cmp(eax, edx)
-            self.assembler.je(end)
-            self.assembler.mov(ebx, 0)
-            self.assembler.add_(end)
-
-            self.frame.push('bool', ebx)
         else:
-
             @function(c_int, BoxedInt, BoxedInt)
             def eq(lhs, rhs):
+                print 'stub eq'
                 return 1 if self.rt.equality(lhs, rhs) else 0
 
-            self.call(eq, lhs, rhs)
-
-            self.frame.pop()
-            self.frame.pop()
-
+            emit_inline_path = False
+            types = ['int', 'unknown']
             reg = self.frame.alloc_reg()
-            self.assembler.mov(reg, eax)
+            stub = Label('stub')
+            end = Label('end')
 
+            if rhs.type in types and lhs.type in types:
+                reg1 = reg2 = None
+                not_equal = Label('not equal')
+
+                if rhs.is_unknown():
+                    reg1 = rhs.to_reg()
+                    self.jump_not_int(reg1, stub)
+                elif not rhs.is_constant():
+                    reg1 = rhs.to_reg()
+
+                if lhs.is_unknown():
+                    reg2 = lhs.to_reg()
+                    self.jump_not_int(reg2, stub)
+                elif not rhs.is_constant():
+                    reg2 = lhs.to_reg()
+
+                if reg1 is not None and reg2 is not None:
+                    self.assembler.mov(reg, reg1)
+                    self.assembler.cmp(reg, reg2)
+
+                if reg1 is None:
+                    assert isinstance(rhs.value, int)
+                    self.assembler.mov(reg, rhs.value)
+                    self.assembler.cmp(reg, reg2)
+
+                if reg2 is None:
+                    assert isinstance(lhs.value, int)
+                    self.assembler.mov(reg, lhs.value)
+                    self.assembler.cmp(reg, reg1)
+
+                self.assembler.mov(reg, 1)
+                self.assembler.je(end)
+                self.assembler.mov(reg, 0)
+                self.assembler.jmp(end)
+
+
+            self.assembler.add_(stub)
+            self.call(eq, lhs, rhs)
+            self.assembler.mov(reg, eax)
+            self.assembler.add_(end)
+
+            self.frame.pop()
+            self.frame.pop()
             self.frame.push('bool', reg)
 
 
     def conditional(self, cond_node, if_node, else_node, else_jump=None):
         self.compile_node(cond_node)
+        self.frame.spill_all(forget=True)
 
         if_part = Label('if part')
         else_part = Label('else part')
@@ -461,7 +481,6 @@ class Compiler:
         cond = self.frame.peek(-1)
         if cond.is_constant():
             boolean = self.rt.toBoolean(cond.to_boxed_int())
-            self.frame.spill_all(forget=True)
 
             if boolean.toBool() == True:
                 self.compile_node(if_node)
@@ -469,10 +488,8 @@ class Compiler:
                 if else_jump:
                     self.assembler.jmp(else_jump)
                 elif else_node:
-                    self.assembler.compile_node(else_node)
+                    self.compile_node(else_node)
         else:
-            self.frame.spill_all(forget=True)
-
             @function(c_int, BoxedInt)
             def stub_conditional(condition):
                 print 'stub conditional'
@@ -578,7 +595,6 @@ class Compiler:
 
         if hasattr(node, 'postfix'):
             self.frame.pop()
-
 
     def op_assign(self, node):
         type = node[0].type.lower()
@@ -833,7 +849,11 @@ def main():
     print ast
 
     fptr = compiler.compile(ast)
+
+    import time
+    start = time.clock()
     fptr()
+    print time.clock() - start
 
     print ""
     print " === Returned === "

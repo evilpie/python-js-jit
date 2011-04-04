@@ -206,7 +206,7 @@ class Frame:
             elif obj.isString():
                 v.set_constant(obj.ptr, 'string')
             else:
-                v.set_constant(addressof(obj), 'object')
+                v.set_constant(obj.ptr, 'object')
         self.stack.append(v)
 
     def peek(self, index):
