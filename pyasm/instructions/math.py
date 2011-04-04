@@ -176,12 +176,17 @@ def sar(inst, target, source):
 @Instruction.producer
 def xor(inst, target, source):
     if isinstance(target, Register):
-        if target is eax:
+        if target is eax and isinstance(source, int):
             inst.chr(0x35)
             inst.pack('i', source)
 
         if isinstance(source, Register):
             inst.chr(0x31)
             inst.modrm(3, target, source)
+
+        if isinstance(source, int):
+            inst.chr(0x81)
+            inst.modrm(3, 6, target)
+            inst.pack('i', source)
 
 

@@ -54,11 +54,23 @@ class FrameValue:
 
         index = self.frame.spill_index
         if self.in_reg():
+            if forget:
+                if self.type == 'unknown':
+                    pass
+                elif self.type == 'int':
+                    self.frame.assembler.shl(self.reg, 1)
+                else:
+                    self.frame.assembler.shl(self.reg, 1)
+                    self.frame.assembler.add(self.reg, 1)
             self.frame.assembler.mov(esi.addr + index * 4, self.reg)
             self.frame.free_reg(self.reg)
+
         else:
             assert self.is_constant()
-            self.frame.assembler.mov(esi.addr + index * 4, self.to_boxed_int().value)
+            if forget:
+                self.frame.assembler.mov(esi.addr + index * 4, self.to_boxed_int().value)
+            else:
+                self.frame.assembler.mov(esi.addr + index * 4, self.to_boxed_int().value >> 1)
 
         self.reg = None
         self.constant = False

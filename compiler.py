@@ -230,11 +230,7 @@ class Compiler:
                 self.frame.push_double(-0)
             elif lhs.is_undefined():
                 self.frame.push_double(float('nan'))
-
-            return
-
-
-        if lhs.is_int():
+        elif lhs.is_int():
             reg = lhs.to_reg()
             self.frame.pop()
 
@@ -249,6 +245,8 @@ class Compiler:
 
             result = self.frame.alloc_reg()
             self.assembler.mov(result, eax)
+
+            self.frame.pop()
             self.frame.push('unknown', result)
 
     def op_unary_plus(self, node):
@@ -319,7 +317,8 @@ class Compiler:
                 raise NotImplementedError('op not')
 
             self.frame.pop()
-            self.assembler.push('bool', reg)
+            self.frame.take_reg(reg)
+            self.frame.push('bool', reg)
 
     def op_void(self, node):
         self.compile_node(node[0])
@@ -440,7 +439,6 @@ class Compiler:
 
             @function(c_int, BoxedInt, BoxedInt)
             def eq(lhs, rhs):
-                print 'stub eq'
                 return 1 if self.rt.equality(lhs, rhs) else 0
 
             self.call(eq, lhs, rhs)
@@ -464,6 +462,8 @@ class Compiler:
         cond = self.frame.peek(-1)
         if cond.is_constant():
             boolean = self.rt.toBoolean(cond.to_boxed_int())
+            self.frame.spill_all(forget=True)
+
             if boolean.toBool() == True:
                 self.compile_node(if_node)
             else:
@@ -472,7 +472,7 @@ class Compiler:
                 elif else_node:
                     self.assembler.compile_node(else_node)
         else:
-            self.frame.spill_all()
+            self.frame.spill_all(forget=True)
 
             @function(c_int, BoxedInt)
             def stub_conditional(condition):
@@ -560,7 +560,7 @@ class Compiler:
     def increment_identifier(self, node, amount):
         self.op_identifier(node[0])
         if hasattr(node, 'postfix'):
-            self.op_identifier(node[0])
+            self.op_identifier(node[0]) # todo this should be self.frame.duplicate or simliar
 
         self.frame.push_int(amount)
 
