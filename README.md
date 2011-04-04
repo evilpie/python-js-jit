@@ -23,7 +23,7 @@ Only some basic operations are implemented, the most of them as so named stub ca
 
      x = 'hello world';
 
-*if / conditional operator / for *
+*if / conditional operator / for*
 
      if (true) {
      }
