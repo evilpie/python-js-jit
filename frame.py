@@ -49,7 +49,7 @@ class FrameValue:
             self.reg = None
 
     def spill(self, forget=False):
-        if self.in_memory():
+        if self.in_memory() or self.is_constant():
             return
 
         index = self.frame.spill_index
@@ -65,16 +65,9 @@ class FrameValue:
             self.frame.assembler.mov(esi.addr + index * 4, self.reg)
             self.frame.free_reg(self.reg)
 
-        else:
-            assert self.is_constant()
-            if forget:
-                self.frame.assembler.mov(esi.addr + index * 4, self.to_boxed_int().value)
-            else:
-                self.frame.assembler.mov(esi.addr + index * 4, self.to_boxed_int().value >> 1)
-
         self.reg = None
-        self.constant = False
         self.memory = index
+
         if forget:
             self.type = 'unknown'
 
@@ -129,6 +122,7 @@ class Frame:
                 if v.in_reg():  # spill oldest
                     reg = v.reg
                     v.spill()
+                    self.take_reg(reg)
                     return reg
             raise Error('should never happen')
 
@@ -214,6 +208,7 @@ class Frame:
 
     def pop(self):
         v = self.stack[-1]
+
         if v.in_reg():
             self.free_reg(v.reg)
         self.stack.pop()

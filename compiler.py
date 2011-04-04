@@ -185,7 +185,6 @@ class Compiler:
         self.assembler.mov(self.frame.scratch, array_init)
         self.assembler.call(self.frame.scratch)
         self.assembler.add(esp, 4)
-
         self.assembler.push(eax)  #fixme
 
         reg = self.frame.alloc_reg()
@@ -201,10 +200,12 @@ class Compiler:
                 self.assembler.mov(reg.addr + i * 4, undefined_value) # todo: needs special value
             i = i - 1
 
-        self.frame.free_reg(reg)
-        reg = self.frame.alloc_reg()
+        for node in nodes:
+            if node:
+                self.frame.pop()
+
         self.assembler.pop(self.frame.scratch)
-        self.assembler.mov(reg, eax)
+        self.assembler.mov(reg, self.frame.scratch)
         self.frame.push('object', reg)
 
 
