@@ -154,7 +154,6 @@ class Compiler:
         value = node.value
 
         str = new_string(value)
-        self.constant_pool.append(str)
         self.frame.push_string(addressof(str))
 
     def op_true(self, node):

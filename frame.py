@@ -200,10 +200,11 @@ class Frame:
             v.set_constant(3, 'undefined')
         else:
             obj = value.toObject()
+
             if obj.isDouble():
                 v.set_constant(obj.toPrimitive(), 'double')
             elif obj.isString():
-                v.set_constant(addressof(obj), 'string')
+                v.set_constant(obj.ptr, 'string')
             else:
                 v.set_constant(addressof(obj), 'object')
         self.stack.append(v)

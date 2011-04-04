@@ -10,7 +10,9 @@ class Runtime:
         'object': new_string('object'),
         'string': new_string('string'),
         'null': new_string('null'),
-        'undefined': new_string('undefined')
+        'undefined': new_string('undefined'),
+        'true': new_string('true'),
+        'false': new_string('false'),
     }
 
     doubles = {
@@ -122,7 +124,25 @@ class Runtime:
             return boxed_bool(False)
         return boxed_bool(double_value)
 
+    def toString(self, v):
+        if v.isUndefined():
+            return boxed_object(self.strings['undefined'])
+        if v.isNull():
+            return boxed_object(self.strings['null'])
+        if v.isBool():
+            return boxed_object(self.strings['true'] if v.toBoolean() else self.strings['false'])
+        if v.isInteger():
+            return boxed_object(new_string(str(v.toInteger())))
 
+        assert v.isObject()
+        obj = v.toObject()
+        if obj.isPrimitive():
+            if obj.isDouble():
+                return boxed_number(obj.toPrimitive())
+            else:
+                return v
+
+        raise NotImplementedError('js object to string')
 
     def toPrimitive(self, v, hint=None):
         if v.isPrimitive():
@@ -184,7 +204,14 @@ class Runtime:
         ltype = self.type(left)
         rtype = self.type(right)
         if ltype == ecma_type['string'] or rtype == ecma_type['string']:
-            return boxed_integer(0xdead)
+            left = self.toString(left)
+            right = self.toString(right)
+
+            lstr = left.toObject().toPrimitive()
+            rstr = right.toObject().toPrimitive()
+
+            return boxed_object(new_string(lstr + rstr))
+
 
         left = self.toNumber(left)
         right = self.toNumber(right)
