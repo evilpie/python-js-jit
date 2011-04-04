@@ -52,6 +52,7 @@ class Compiler:
 
         self.vars = {}
         self.var_space = None
+        self.names = []
 
         self.return_value = BoxedInt(null_value)
 
@@ -907,8 +908,8 @@ def main():
     fptr()
     print time.clock() - start
 
-    print ""
     print " === Returned === "
     dump_boxed_int(compiler.return_value)
 
-main()
+if __name__ == '__main__':
+    main()
