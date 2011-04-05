@@ -423,6 +423,12 @@ class Compiler:
             self.frame.push('unknown', result)
 
     def op_eq(self, node):
+        self.equality(node, True)
+
+    def op_ne(self, node):
+        self.equality(node, False)
+
+    def equality(self, node, cond):
         self.compile_node(node[0])
         self.compile_node(node[1])
 
@@ -436,9 +442,9 @@ class Compiler:
             self.frame.pop()
 
             if equal:
-                self.frame.push_bool(True)
+                self.frame.push_bool(cond)
             else:
-                self.frame.push_bool(False)
+                self.frame.push_bool(not cond)
         elif (lhs.is_int() or lhs.is_bool()) and (rhs.is_int() or rhs.is_bool()):
             end = Label('end')
             equal = Label('equal')
@@ -448,10 +454,10 @@ class Compiler:
 
             self.assembler.cmp(reg1, reg2)
             self.assembler.je(equal)
-            self.assembler.mov(reg1, 0)
+            self.assembler.mov(reg1, int(not cond))
             self.assembler.jmp(end)
             self.assembler.add_(equal)
-            self.assembler.mov(reg1, 1)
+            self.assembler.mov(reg1, int(cond))
             self.assembler.add_(end)
 
             self.frame.pop()
@@ -462,7 +468,7 @@ class Compiler:
             @function(c_int, BoxedInt, BoxedInt)
             def eq(lhs, rhs):
                 print 'stub eq'
-                return 1 if self.rt.equality(lhs, rhs) else 0
+                return cond if self.rt.equality(lhs, rhs) else not cond
 
             emit_inline_path = False
             types = ['int', 'unknown']
@@ -500,9 +506,9 @@ class Compiler:
                     self.assembler.mov(reg, lhs.value << 1)
                     self.assembler.cmp(reg, reg1)
 
-                self.assembler.mov(reg, 1)
+                self.assembler.mov(reg, int(cond))
                 self.assembler.je(end)
-                self.assembler.mov(reg, 0)
+                self.assembler.mov(reg, int(not cond))
                 self.assembler.jmp(end)
 
 
