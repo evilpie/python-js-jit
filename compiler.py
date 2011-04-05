@@ -89,6 +89,8 @@ class Compiler:
         self.spill_memory = (c_int * self.frame.spill_index)()
         self.ptr_to_spill.value = addressof(self.spill_memory)
 
+        print self.assembler.assembler
+
         return self.assembler.compile()
 
     def box(self, v, target):
@@ -522,7 +524,7 @@ class Compiler:
             self.frame.push('bool', reg)
 
 
-    def conditional(self, cond_node, if_node, else_node, else_jump=None):
+    def conditional(self, cond_node, if_node, else_node, if_jump=None, else_jump=None):
         self.compile_node(cond_node)
         self.frame.spill_all(forget=True)
 
@@ -535,12 +537,16 @@ class Compiler:
             boolean = self.rt.toBoolean(cond.to_boxed_int())
 
             if boolean.toBool() == True:
-                self.compile_node(if_node)
+                if if_jump:
+                    self.assembler.jmp(if_jump)
+                else:
+                    self.compile_node(if_node)
             else:
                 if else_jump:
                     self.assembler.jmp(else_jump)
                 elif else_node:
                     self.compile_node(else_node)
+            return
         else:
             @function(c_int, BoxedInt)
             def stub_conditional(condition):
@@ -585,9 +591,13 @@ class Compiler:
             self.assembler.jmp(end)
 
         #if part
-        self.assembler.add_(if_part)
-        self.compile_node(if_node)
-        self.assembler.add_(end)
+        if if_node:
+            self.assembler.add_(if_part)
+            self.compile_node(if_node)
+            self.assembler.add_(end)
+        else:
+            self.assembler.add_(if_part)
+            self.assembler.jmp(if_jump)
 
     def op_if(self, node):
         self.conditional(node.condition, node.thenPart, node.elsePart)
@@ -605,6 +615,9 @@ class Compiler:
 
         if node.condition:
             self.conditional(node.condition, node.body, None, else_jump=end)
+        else:
+            self.spill_all(forget=True)
+            self.compile_node(node.update)
 
         if node.update:
             self.compile_node(node.update)
@@ -612,6 +625,32 @@ class Compiler:
 
         self.assembler.jmp(start)
         self.assembler.add_(end)
+
+    def op_while(self, node):
+
+        start = Label('start')
+        end = Label('end')
+        self.assembler.add_(start)
+
+        if node.condition:
+            self.conditional(node.condition, node.body, None, else_jump=end)
+        else:
+            self.spill_all(forget=True)
+            self.compile_node(node.body)
+
+        self.assembler.jmp(start)
+        self.assembler.add_(end)
+
+    def op_do(self, node):
+
+        start = Label('start')
+        self.assembler.add_(start)
+
+        self.frame.spill_all(forget=True)
+        self.compile_node(node.body)
+
+        self.conditional(node.condition, None, None, if_jump=start)
+
 
     def op_increment(self, node):
         type = node[0].type.lower()
