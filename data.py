@@ -83,9 +83,6 @@ class Object():
         assert self.type > object_types['string']
         return self.clas() == object_classes['array']
 
-    def to(self, object_type):
-        return cast(self.ptr, POINTER(object_type))[0]
-
 
 class BaseObject(Structure):
     _fields_ = [('type', c_int)]  # minor hack here
@@ -100,7 +97,8 @@ class PrimitiveString(Structure):
                 ('str', c_wchar_p)]
 
 class Shape(Structure):
-    _fields_ = [('clas', c_int)]
+    _fields_ = [('clas', c_int),
+                ('proto', c_void_p)]
 
 class JavaScriptObject(Structure):
     _fields_ = [('shape', c_void_p),
@@ -112,15 +110,6 @@ class ArrayObject(Structure):
                 ('properties', c_void_p),
                 ('elements', c_void_p),
                 ('length', c_int)]
-
-    def element(self, index):
-        return cast(self.elements, POINTER(c_int))[index]
-
-    def setElement(self, index, value):
-        cast(self.elements, POINTER(c_int))[index] = value
-
-    def hasElements(self):
-        return self.elements != 0
 
 root = [] # todo arg!!!!!!!!!
 
@@ -140,7 +129,7 @@ def new_double(double):
 
 
 
-def new_array(size=0):
+def new_array(size = 0):
     if size == 0:
         elements = 0
     else:
@@ -224,7 +213,6 @@ false_value = object_value(0)
 true_value  = object_value(1)
 null_value  = object_value(2)
 undefined_value  = object_value(3)
-
 
 def dump_boxed_int(b):
     if b.isPrimitive():

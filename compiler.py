@@ -11,8 +11,8 @@ from jsparser import parse
 
 from struct import *
 from data import *
-from frame import *
-
+from frame import Frame
+from context import Context
 
 class AssemblerWrapper:
     def __init__(self, assembler):
@@ -37,7 +37,7 @@ class AssemblerWrapper:
         return self.assembler.compile(*args)
 
 class Compiler:
-    def __init__(self, assembler, rt):
+    def __init__(self, assembler, rt, ctx):
         self.assembler = AssemblerWrapper(assembler)
         self.frame = Frame(self.assembler)
         self.constant_pool = []
@@ -45,6 +45,7 @@ class Compiler:
         self.objects = (c_int * 20)()
 
         self.rt = rt # runtime
+        self.ctx = ctx
         self.state = {
             'with': False,
             'eval': False
@@ -211,7 +212,6 @@ class Compiler:
         self.assembler.mov(reg, self.frame.scratch)
         self.frame.push('object', reg)
 
-
     def op_unary_minus(self, node):
         self.compile_node(node[0])
 
@@ -328,11 +328,11 @@ class Compiler:
         self.frame.push_undefined()
 
     def op_plus(self, node):
-        self.op_binary(node, 'add')
+        self.binary(node, 'add')
     def op_minus(self, node):
-        self.op_binary(node, 'sub')
+        self.binary(node, 'sub')
 
-    def op_binary(self, node, op):
+    def binary(self, node, op):
         self.compile_node(node[0])
         self.compile_node(node[1])
 
@@ -423,6 +423,43 @@ class Compiler:
             self.frame.pop()
             self.frame.pop()
             self.frame.push('unknown', result)
+
+    def op_lt(self, node):
+        self.compile_node(node[0])
+        self.compile_node(node[1])
+
+        rhs = self.frame.peek(-1)
+        lhs = self.frame.peek(-2)
+
+        if lhs.is_constant() and rhs.is_constant():
+            matches = self.rt.relational(lhs.to_boxed_int(), rhs.to_boxed_int(), node.type.lower())
+
+            self.frame.pop()
+            self.frame.pop()
+
+            if matches is None:
+                self.frame.push_bool(False)
+            else:
+                self.frame.push_bool(matches)
+
+            return
+
+        @function(c_int, BoxedInt, BoxedInt)
+        def lt(lhs, rhs):
+            matches = self.rt.relational(lhs, rhs, node.type.lower())
+            if matches is None:
+                return 0
+            else:
+                return int(matches)
+
+        self.call(lt, lhs, rhs)
+
+        reg = self.frame.alloc_reg()
+        self.assembler.mov(reg, eax)
+
+        self.frame.pop()
+        self.frame.pop()
+        self.frame.push('bool', reg)
 
     def op_eq(self, node):
         self.equality(node, True)
@@ -651,7 +688,6 @@ class Compiler:
 
         self.conditional(node.condition, None, None, if_jump=start)
 
-
     def op_increment(self, node):
         type = node[0].type.lower()
 
@@ -701,8 +737,11 @@ class Compiler:
             self.assign_identifier(node)
         elif type == 'index':
             self.assign_index(node)
+        elif type == 'dot':
+            self.assign_dot(node)
         else:
-            assert 'not done yet', False
+            raise Exception('invalid left hand side')
+
 
     def op_var(self, nodes):
         for node in nodes:
@@ -941,10 +980,10 @@ def main():
 
     asm = Program()
     runtime = Runtime()
-    compiler = Compiler(asm, runtime)
+    context = Context('global')
+    compiler = Compiler(asm, runtime, context)
 
     ast = parse(code)
-    print ast
 
     fptr = compiler.compile(ast)
 

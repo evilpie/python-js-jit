@@ -196,6 +196,42 @@ class Runtime:
         rvalue = self.toNumber(right)
         return self.numberConvert(lvalue) == self.numberConvert(rvalue)
 
+    def relational(self, left, right, left_first = True):
+        if left_first:
+            px = self.toPrimitive(left, 'number')
+            py = self.toPrimitive(right, 'number')
+        else:
+            py = self.toPrimitive(right, 'number')
+            px = self.toPrimitive(left, 'number')
+
+        if not (self.type(px) == self.type(py) == ecma_type['string']):
+            nx = self.toNumber(px)
+            ny = self.toNumber(py)
+
+            vx = self.numberConvert(nx)
+            vy = self.numberConvert(ny)
+
+            if math.isnan(vx) or math.isnan(vy):
+                return None
+
+            if vx == vy:
+                return False
+
+            # todo step f. - k.
+
+            return vx < vy
+
+        if px.startswith(py):
+            return False
+
+        if py.startswith(px):
+            return True
+
+        return px < py
+
+
+
+
 
     def add(self, left, right):
         left = self.toPrimitive(left)
