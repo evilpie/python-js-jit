@@ -227,6 +227,10 @@ class Value(Structure):
     def object(pointer):
         return Value((addressof(pointer) << 1) | 1)
 
+    @staticmethod
+    def boolean(value):
+        self.raw = Value.true if value else Value.false
+
     def isInt(self):
         return not bool(self.raw & 1)
 
@@ -296,12 +300,15 @@ class Value(Structure):
                 shape = obj.getShape()
                 while True:
                     if shape.name:
-                        print '      '  + shape.name
+                        print '       %s: %d' % (shape.name, obj.getProperties()[shape.slot])
 
                     if shape.next:
                         shape = shape.next[0]
                     else:
                         break
+
+                for i in range(0, shape.length):
+                    print '       %d: %d' % (i, obj.getElements()[i])
 
 class Error:
     pass

@@ -46,7 +46,7 @@ class Runtime:
     def type(self, v):
         if v.isInteger():
             return ecma_type['number']
-        if v.isBool():
+        if v.isBoolean():
             return ecma_type['boolean']
         if v.isNull():
             return ecma_type['null']
@@ -102,43 +102,41 @@ class Runtime:
 
     def toBoolean(self, v):
         if v.isUndefined():
-            return boxed_bool(False)
+            return Value(Value.false)
         if v.isNull():
-            return boxed_bool(False)
+            return Value(Value.false)
         if v.isBool():
             return v
         if v.isInteger():
-            return boxed_bool(v.toInteger())
+            return Value.boolean(v.toInteger())
 
         obj = v.toObject()
         if obj.isObject():
-            return boxed_bool(True)
+            return Value(Value.true)
         if obj.isString():
-            if len(obj.to(PrimitiveString).str):
-                return boxed_bool(True)
-            return boxed_bool(False)
+            return Value.boolean(obj.toPrimitive())
 
         assert obj.isDouble()
-        double_value = obj.to(PrimitiveDouble).value
-        if math.isnan(double_value):
-            return boxed_bool(False)
-        return boxed_bool(double_value)
+        double = obj.toPrimitive()
+        if math.isnan(double):
+            return Value(Value.false)
+        return Value.boolean(double)
 
     def toString(self, v):
         if v.isUndefined():
-            return boxed_object(self.strings['undefined'])
+            return Value.object(self.strings['undefined'])
         if v.isNull():
-            return boxed_object(self.strings['null'])
+            return Value.object(self.strings['null'])
         if v.isBool():
-            return boxed_object(self.strings['true'] if v.toBoolean() else self.strings['false'])
+            return Value.object(self.strings['true'] if v.toBoolean() else self.strings['false'])
         if v.isInteger():
-            return boxed_object(new_string(str(v.toInteger())))
+            return Value.object(new_string(str(v.toInteger())))
 
         assert v.isObject()
         obj = v.toObject()
         if obj.isPrimitive():
             if obj.isDouble():
-                return boxed_number(obj.toPrimitive())
+                return Value.object(new_string(str(obj.toPrimitive())))
             else:
                 return v
 

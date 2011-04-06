@@ -220,7 +220,8 @@ class Compiler:
             obj.addProperty(str, value)
 
         for node in nodes:
-            self.compile_node(node[0])
+            string = new_string(str(node[0].value))
+            self.frame.push_string(addressof(string))
             self.compile_node(node[1])
 
             obj = self.frame.peek(-3)
@@ -934,7 +935,9 @@ class Compiler:
                 return addressof(self.rt.typeof(v))
 
             self.call(typeof, t)
-            self.frame.push('string', eax)
+            reg = self.frame.alloc_reg()
+            self.assembler.mov(reg, eax)
+            self.frame.push('string', reg)
 
     def op_nop(self, node):
         pass
