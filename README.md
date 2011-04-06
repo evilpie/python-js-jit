@@ -58,12 +58,12 @@ Credits
 License
 -------
 pyasm
-     :copyright: 2008 by Florian Boesch <pyalot@gmail.com>.
-     :license: GNU AGPL v3 or later, see LICENSE for more details.
+>:copyright: 2008 by Florian Boesch <pyalot@gmail.com>.
+>:license: GNU AGPL v3 or later, see LICENSE for more details.
 pynarcissus
-     Version: MPL 1.1/GPL 2.0/LGPL 2.1
-     The Initial Developer of the Original Code is
-     Brendan Eich <brendan@mozilla.org>.
-     Portions created by the Initial Developer are Copyright (C) 2004
-     the Initial Developer. All Rights Reserved.
+>Version: MPL 1.1/GPL 2.0/LGPL 2.1
+>The Initial Developer of the Original Code is
+>Brendan Eich <brendan@mozilla.org>.
+>Portions created by the Initial Developer are Copyright (C) 2004
+>the Initial Developer. All Rights Reserved.
 
