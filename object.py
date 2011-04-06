@@ -7,7 +7,7 @@ class Object:
 
     primitiveTypes = dict(
         double = 0,
-        string = 1
+        string = 2
     )
 
     def __init__(self, pointer):
@@ -17,12 +17,12 @@ class Object:
         return self.getType() <= Object.primitiveTypes.string
 
     def getDouble(self):
-        assert self.getType() == Object.primitiveTypes.double
-        return cast(self.pointer, POINTER(PrimitiveDouble)).value
+        assert self.getType() == Object.primitiveTypes['double']
+        return cast(self.pointer, POINTER(PrimitiveDouble_))[0].value
 
     def getString(self):
-        assert self.getType() == Object.primitiveTypes.string
-        return cast(self.pointer, POINTER(PrimitiveString)).value
+        assert self.getType() == Object.primitiveTypes['string']
+        return cast(self.pointer, POINTER(PrimitiveString_))[0].value
 
     def getType(self):
         return cast(self.pointer, POINTER(c_int))[0]
@@ -71,15 +71,18 @@ class Object:
         shape = self.getShape()
 
         while True:
-            print 'set: ',shape.name
             if shape.name == name:
                 slot = shape.slot
                 self.getProperties()[slot] = value.raw
                 return
 
             if not shape.next:
-                return
+                break
             shape = shape.next[0]
+
+        self.addProperty(name, value)
+
+
 
     def addProperty(self, name, value):
         shape = self.getShape()
@@ -124,12 +127,12 @@ Shape._fields_ = [('type', c_int),
                   ('capacity', c_int),
                   ('next',  POINTER(Shape))]
 
-class PrimitiveDouble(Structure):
+class PrimitiveDouble_(Structure):
     _fields_ = [('type', c_int),
                 ('pad_', c_int),
                 ('value', c_double)]
 
-class PrimitiveString(Structure):
+class PrimitiveString_(Structure):
     _fields_ = [('type', c_int),
                 ('value', c_wchar_p)]
 
@@ -159,11 +162,6 @@ class Value(Structure):
     def __init__(self, raw = 0):
         self.raw = raw
 
-        if raw & 1:
-            self.pointer = raw >> 1
-        else:
-            self.integer = raw >> 1
-
     @staticmethod
     def testIntegerFits(value):
         assert isinstance(value, int)
@@ -174,7 +172,7 @@ class Value(Structure):
 
     @staticmethod
     def object(pointer):
-        return Value((addressof(obj) << 1) | 1)
+        return Value((addressof(pointer) << 1) | 1)
 
     def isInt(self):
         return not bool(self.raw & 1)
@@ -183,7 +181,7 @@ class Value(Structure):
         return bool(self.raw & 1)
 
     def isObject(self):
-        return self.isPointer() and self.isSpecial()
+        return self.isPointer() and not self.isSpecial()
 
     def isSpecial(self):
         return (self.raw & 1) and self.raw <= Value.hole
@@ -201,13 +199,13 @@ class Value(Structure):
         return self.raw == Value.hole
 
     def toInt(self):
-        return self.integer
+        return self.raw >> 1
 
     def toPointer(self):
-        return self.pointer
+        return self.raw >> 1
 
     def toObject(self):
-        return Object(self.pointer)
+        return Object(self.raw >> 1)
 
     def setBoolean(self, boolean):
         self.raw = Value.true if boolean else Value.false

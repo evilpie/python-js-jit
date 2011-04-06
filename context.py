@@ -23,9 +23,8 @@ class Context:
 
         self.root = [global_shape, global_properties, global_object]
 
-        obj = Object(addressof(global_object))
-        self.this = obj
-        self.object = obj
+        self.this = Value.object(global_object)
+        self.object = Object(addressof(global_object))
 
 
 

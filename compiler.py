@@ -201,7 +201,7 @@ class Compiler:
 
         @function(c_int)
         def this():
-            return self.ctx.this.value
+            return self.ctx.this.raw
 
         self.call(this)
         reg = self.frame.alloc_reg()
@@ -765,7 +765,6 @@ class Compiler:
 
         @function(c_int, Value)
         def assign(value):
-            print value.raw
             self.ctx.object.setProperty(name, value)
             return value.raw
 
@@ -825,7 +824,6 @@ class Compiler:
         def identifier():
             return self.ctx.object.getProperty(name).raw
 
-
         self.call(identifier)
         reg = self.frame.alloc_reg()
         self.assembler.mov(reg, eax)
@@ -835,9 +833,11 @@ class Compiler:
         self.compile_node(node[0])
         name = node[1].value
 
-        @function(c_int, c_int, BoxedInt)
-        def dot(index, base):
-            return undefined_value
+        @function(c_int, Value)
+        def dot(base):
+            assert base.isObject()
+            obj = base.toObject()
+            return obj.getProperty(name).raw
 
         obj = self.frame.peek(-1)
         self.call(dot, obj)
@@ -851,14 +851,20 @@ class Compiler:
         self.compile_node(node[0])
         self.compile_node(node[1])
 
-        @function(c_int, BoxedInt, BoxedInt)
-        def index(obj, index):
-            return undefined_value
+        @function(c_int, Value, Value)
+        def index_stub(base, index):
+            assert base.isObject()
+            obj = base.toObject()
+
+            name = Value(self.rt.toString(BoxedInt(index.raw)).value)
+            str = name.toObject().getString()
+
+            return obj.getProperty(str).raw
 
         obj = self.frame.peek(-2)
         index = self.frame.peek(-1)
 
-        self.call(dot, obj, index)
+        self.call(index_stub, obj, index)
         reg = self.frame.alloc_reg()
         self.assembler.mov(reg, eax)
 
@@ -918,7 +924,6 @@ def main():
     asm = Program()
     runtime = Runtime()
     context = Context(Context.GLOBAL)
-    context.this = boxed_object(new_string('nothing to see here'))
     compiler = Compiler(asm, runtime, context)
 
     ast = parse(code)
