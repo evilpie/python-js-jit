@@ -14,6 +14,8 @@ from data import *
 from frame import Frame
 from context import Context
 
+from object import Value
+
 class AssemblerWrapper:
     def __init__(self, assembler):
         self.assembler = assembler
@@ -40,9 +42,6 @@ class Compiler:
     def __init__(self, assembler, rt, ctx):
         self.assembler = AssemblerWrapper(assembler)
         self.frame = Frame(self.assembler)
-        self.constant_pool = []
-
-        self.objects = (c_int * 20)()
 
         self.rt = rt # runtime
         self.ctx = ctx
@@ -51,22 +50,9 @@ class Compiler:
             'eval': False
         }
 
-        self.vars = {}
-        self.var_space = None
-        self.names = []
-
-        self.return_value = BoxedInt(null_value)
-
     def declare_vars(self, vars):
-        index = 0
-
         for var in vars:
-            if var.name not in self.vars:
-                self.vars[var.name] = index
-                index = index + 1
-
-        self.var_space = (c_int * index)()
-        self.var_space[:] = [undefined_value] * index
+            self.ctx.object.addProperty(var.name, Value(Value.undefined))
 
     def compile(self, ast):
         assert ast.type == 'SCRIPT'
@@ -177,8 +163,6 @@ class Compiler:
         @function(c_int, c_int)
         def array_init(size):
             obj = new_array(size)
-            self.constant_pool.append(obj)
-
             return addressof(obj)
 
         size = len(nodes)
@@ -212,13 +196,26 @@ class Compiler:
         self.assembler.mov(reg, self.frame.scratch)
         self.frame.push('object', reg)
 
+
+    def op_this(self, nodes):
+
+        @function(c_int)
+        def this():
+            return self.ctx.this.value
+
+        self.call(this)
+        reg = self.frame.alloc_reg()
+        self.assembler.mov(reg, eax)
+
+        self.frame.push('unknown', reg)
+
     def op_unary_minus(self, node):
         self.compile_node(node[0])
 
         lhs = self.frame.peek(-1)
         if lhs.is_constant():
             self.frame.pop()
-            value = self.rt.sub(boxed_integer(0, lhs.to_boxed_int()))
+            value = self.rt.sub(boxed_integer(0), lhs.to_boxed_int())
             self.push_boxed_int(value)
         elif lhs.is_int():
             reg = lhs.to_reg()
@@ -708,7 +705,7 @@ class Compiler:
         self.frame.push_int(1)
 
         class Nop:
-            type = 'NOP'
+            type = 'nop'
 
         if amount > 0:
             self.op_plus({
@@ -763,44 +760,23 @@ class Compiler:
             self.frame.pop()
 
     def assign_identifier(self, node):
+        self.compile_node(node[1])
         name = node[0].value
 
-        if not name in self.vars:
-            raise 'var not declared'
+        @function(c_int, Value)
+        def assign(value):
+            print value.raw
+            self.ctx.object.setProperty(name, value)
+            return value.raw
 
-        index = self.vars[name]
-
-        self.compile_node(node[1])
         rhs = self.frame.peek(-1)
 
-        if rhs.is_unknown():
-            reg = rhs.to_reg()
+        self.call(assign, rhs)
+        reg = self.frame.alloc_reg()
+        self.assembler.mov(reg, eax)
 
-            self.assembler.mov(self.frame.scratch, addressof(self.var_space))
-            self.assembler.mov(self.frame.scratch.addr + index * 4, reg)
-
-            self.frame.pop()
-            self.frame.take_reg(reg) # pop would free the |reg|
-            self.frame.push('unknown', reg)
-
-        elif rhs.is_constant():
-            boxed = rhs.to_boxed_int()
-
-            self.assembler.mov(self.frame.scratch, addressof(self.var_space))
-            self.assembler.mov(self.frame.scratch.addr + index * 4, boxed.value)
-
-            self.frame.pop()
-            self.frame.push_boxed_int(boxed)
-        else:
-            reg = rhs.to_reg()
-
-            self.box(rhs, reg)
-            self.assembler.mov(self.frame.scratch, addressof(self.var_space))
-            self.assembler.mov(self.frame.scratch.addr + index * 4, reg)
-
-            self.frame.pop()
-            self.frame.take_reg(reg)
-            self.frame.push(rhs.type, reg)
+        self.frame.pop()
+        self.frame.push('unknown', reg) # todo: we know the type
 
     def assign_index(self, node):
         self.compile_node(node[0][0])
@@ -845,88 +821,49 @@ class Compiler:
     def op_identifier(self, node):
         name = node.value
 
-        if name not in self.vars:
-            raise 'var not declared'
+        @function(c_int)
+        def identifier():
+            return self.ctx.object.getProperty(name).raw
 
-        index = self.vars[name]
 
+        self.call(identifier)
         reg = self.frame.alloc_reg()
-        self.assembler.mov(self.frame.scratch, addressof(self.var_space))
-        self.assembler.mov(reg, self.frame.scratch.addr + index * 4)
-
+        self.assembler.mov(reg, eax)
         self.frame.push('unknown', reg)
 
     def op_dot(self, node):
         self.compile_node(node[0])
+        name = node[1].value
 
         @function(c_int, c_int, BoxedInt)
         def dot(index, base):
-            print 'stub dot', index, base
-            property = self.names[index]
+            return undefined_value
 
-            if base.isObject():
-                obj = base.toObject()
-                if obj.isString():
-                    if property == 'length':
-                        return integer_value(len(obj.toPrimitive()))
+        obj = self.frame.peek(-1)
+        self.call(dot, obj)
+        reg = self.frame.alloc_reg()
+        self.assembler.mov(reg, eax)
 
-                if obj.isArray():
-                    if property == 'length':
-                        return integer_value(obj.to(ArrayObject).length)
-
-            return integer_value(0xdead)
-
-        self.names.append(node[1].value)
-        index = len(self.names) - 1
-
-        lhs = self.frame.pop(eax)
-
-        self.assembler.push(eax)
-        self.assembler.push(index)
-        self.assembler.mov(eax, dot)
-        self.assembler.call(eax)
-        self.assembler.add(esp, 8)
-
-        self.frame.push('unknown', eax)
+        self.frame.pop()
+        self.frame.push('unknown', reg)
 
     def op_index(self, node):
         self.compile_node(node[0])
         self.compile_node(node[1])
 
-        rhs = self.frame.pop(ebx)
-        lhs = self.frame.pop(eax)
+        @function(c_int, BoxedInt, BoxedInt)
+        def index(obj, index):
+            return undefined_value
 
-        @function(c_int, c_int, BoxedInt)
-        def index_int(index, base):
-            print 'stub index int', index, base
+        obj = self.frame.peek(-2)
+        index = self.frame.peek(-1)
 
-            if base.isObject():
-                obj = base.toObject()
-                if obj.isString():
-                    string = obj.toPrimitive()
-                    if index < len(string):
-                        o = new_string(string[index])
-                        self.constant_pool.append(o)
-                        return object_value(addressof(o))
+        self.call(dot, obj, index)
+        reg = self.frame.alloc_reg()
+        self.assembler.mov(reg, eax)
 
-                if obj.isArray():
-                    array = obj.to(ArrayObject)
-                    if index < array.length and array.hasElements():
-                        return array.element(index)
-
-            return integer_value(11111)
-
-        if rhs == 'int':
-            self.assembler.push(eax)
-            self.assembler.push(ebx)
-            self.assembler.mov(eax, index_int)
-            self.assembler.call(eax)
-            self.assembler.add(esp, 8)
-
-            self.frame.push('unknown', eax)
-
-        else:
-            raise NotImplementedError('non int index')
+        self.frame.pop()
+        self.frame.push('unknown', reg)
 
 
     def op_typeof(self, node):
@@ -980,7 +917,8 @@ def main():
 
     asm = Program()
     runtime = Runtime()
-    context = Context('global')
+    context = Context(Context.GLOBAL)
+    context.this = boxed_object(new_string('nothing to see here'))
     compiler = Compiler(asm, runtime, context)
 
     ast = parse(code)
@@ -991,9 +929,6 @@ def main():
     start = time.clock()
     fptr()
     print time.clock() - start
-
-    print " === Returned === "
-    dump_boxed_int(compiler.return_value)
 
 if __name__ == '__main__':
     main()
