@@ -14,7 +14,7 @@ from data import *
 from frame import Frame
 from context import Context
 
-from object import Value
+from object import Value, ObjectFactory
 
 class AssemblerWrapper:
     def __init__(self, assembler):
@@ -92,6 +92,7 @@ class Compiler:
         else:
             if v.is_int():
                 reg = v.to_reg()
+                v.type = 'unknown' # fixme
                 self.assembler.shl(reg, 1)
                 self.assembler.mov(target, reg)
             elif v.is_double():
@@ -102,6 +103,7 @@ class Compiler:
                     self.assembler.mov(target, reg)
             else:
                 reg = v.to_reg()
+                v.type = 'unknown'
                 self.assembler.shl(reg, 1)
                 self.assembler.add(reg, 1)
                 if target != reg:
@@ -161,9 +163,9 @@ class Compiler:
                 self.compile_node(node)
 
         @function(c_int, c_int)
-        def array_init(size):
-            obj = new_array(size)
-            return addressof(obj)
+        def array_init(length):
+            array = ObjectFactory.createArray(length)
+            return array.pointer
 
         size = len(nodes)
 
@@ -195,6 +197,42 @@ class Compiler:
         self.assembler.pop(self.frame.scratch)
         self.assembler.mov(reg, self.frame.scratch)
         self.frame.push('object', reg)
+
+    def op_object_init(self, nodes):
+        @function(c_int)
+        def object_init():
+            obj = ObjectFactory.createPlain(0, len(nodes) + 2)
+            return obj.pointer
+
+        self.call(object_init)
+        reg = self.frame.alloc_reg()
+        self.assembler.mov(reg, eax)
+
+        self.frame.push('object', reg)
+
+        @function(None, Value, Value, Value)
+        def add_property(obj, key, value):
+            obj = obj.toObject()
+
+            name = Value(self.rt.toString(BoxedInt(key.raw)).value)
+            str = name.toObject().toString()
+
+            obj.addProperty(str, value)
+
+        for node in nodes:
+            self.compile_node(node[0])
+            self.compile_node(node[1])
+
+            obj = self.frame.peek(-3)
+            key = self.frame.peek(-2)
+            value = self.frame.peek(-1)
+
+            self.call(add_property, obj, key, value)
+
+            self.frame.pop()
+            self.frame.pop()
+
+        # the object pointers stays on the stack
 
 
     def op_this(self, nodes):
@@ -314,10 +352,10 @@ class Compiler:
         self.compile_node(node[0])
         lhs = self.frame.peek(-1)
 
-        @function(None, BoxedInt)
+        @function(None, Value)
         def log(v):
             print 'void stub (logging)'
-            dump_boxed_int(v)
+            v.dump()
 
         self.call(log, lhs)
 
@@ -746,16 +784,26 @@ class Compiler:
                 continue
 
             name = node.name
-            if not name in self.vars:
-                raise 'var not declared'
 
-            index = self.vars[name]
+            obj = self.ctx.object
+            shape = obj.getShape()
+
+            while True:
+                if shape.name == name:
+                    slot = shape.slot
+                    break
+
+                if shape.next:
+                    shape = shape.next[0]
+                else:
+                    raise Exception('var not found')
 
             self.compile_node(node.initializer)
             rhs = self.frame.peek(-1)
 
-            self.assembler.mov(self.frame.scratch, addressof(self.var_space))
-            self.box(rhs, self.frame.scratch.addr + index * 4)
+            self.assembler.mov(self.frame.scratch, obj.pointer)
+            self.assembler.mov(self.frame.scratch, self.frame.scratch.addr + 4)
+            self.box(rhs, self.frame.scratch.addr + slot * 4)
 
             self.frame.pop()
 

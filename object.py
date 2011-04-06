@@ -14,13 +14,19 @@ class Object:
         self.pointer = pointer
 
     def isPrimitive(self):
-        return self.getType() <= Object.primitiveTypes.string
+        return self.getType() <= Object.primitiveTypes['string']
 
-    def getDouble(self):
+    def isString(self):
+        return self.getType() == Object.primitiveTypes['string']
+
+    def isDouble(self):
+        return self.getType() == Object.primitiveTypes['double']
+
+    def toDouble(self):
         assert self.getType() == Object.primitiveTypes['double']
         return cast(self.pointer, POINTER(PrimitiveDouble_))[0].value
 
-    def getString(self):
+    def toString(self):
         assert self.getType() == Object.primitiveTypes['string']
         return cast(self.pointer, POINTER(PrimitiveString_))[0].value
 
@@ -32,7 +38,7 @@ class Object:
         pass
 
     def getClassName(self):
-        pass
+        return self.getShape().clas
 
     def getShape(self):
         return cast(self.getType(), POINTER(Shape))[0]
@@ -115,11 +121,12 @@ class Object:
         elements = self.getElements()
         return Value(elements[index])
 
+
 class Shape(Structure):
     pass
 
 Shape._fields_ = [('type', c_int),
-                  ('class', c_wchar_p),
+                  ('clas', c_wchar_p),
                   ('proto', c_void_p),
                   ('name', c_wchar_p),
                   ('slot', c_int),
@@ -141,6 +148,52 @@ class PlainObject(Structure):
     _fields_ = [('shape', c_void_p),
                ('properties', POINTER(c_int)),
                ('elements', POINTER(c_int))]
+
+
+class ObjectFactory:
+
+    classes = {
+        'plain': 1,
+        'array': 2,
+        'global': 3
+    }
+
+    @staticmethod
+    def createPlain(length = None, capacity = None):
+        capacity = int(capacity)
+        length = int(length)
+
+        new = Shape(ObjectFactory.classes['plain'], 'Object', None, "", -1, length, capacity, None)
+
+        properties = (c_int * capacity)()
+        elements = (c_int * length)()
+
+
+        obj = PlainObject(addressof(new), properties, elements)
+
+        root.append(new)
+        root.append(elements)
+        root.append(properties)
+        root.append(obj)
+
+        return Object(addressof(obj))
+
+    @staticmethod
+    def createArray(length = 3):
+        length = int(length)
+
+        new = Shape(ObjectFactory.classes['array'], 'Array', None, "", -1, length, 0, None)
+
+        elements = (c_int * length)()
+
+        obj = PlainObject(addressof(new), None, elements)
+
+        root.append(new)
+        root.append(elements)
+        root.append(obj)
+
+        return Object(addressof(obj))
+
 
 class Value(Structure):
     _fields_ = [('raw', c_int)]
@@ -215,6 +268,40 @@ class Value(Structure):
 
     def setUndefined(self):
         self.raw = Value.undefined
+
+    def dump(self):
+        if self.isSpecial():
+            if self.isBoolean():
+                print '[Boolean] %s' % self.toBoolean()
+            if self.isNull():
+                print '[Null]'
+            if self.isUndefined():
+                print '[Undefined]'
+            if self.isHole():
+                print '[Hole]'
+
+        elif self.isInt():
+            print '[Int] %d' % self.toInt()
+        else:
+            obj = self.toObject()
+            print '[Heap Object] @ %X' % obj.pointer
+
+            if obj.isString():
+                print '   [String] "%s"' % obj.toString()
+            elif obj.isDouble():
+                print '   [Double] %f' % obj.toDouble()
+            else:
+                print '   [%s]' % obj.getClassName()
+
+                shape = obj.getShape()
+                while True:
+                    if shape.name:
+                        print '      '  + shape.name
+
+                    if shape.next:
+                        shape = shape.next[0]
+                    else:
+                        break
 
 class Error:
     pass

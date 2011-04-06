@@ -229,10 +229,6 @@ class Runtime:
 
         return px < py
 
-
-
-
-
     def add(self, left, right):
         left = self.toPrimitive(left)
         right = self.toPrimitive(right)
