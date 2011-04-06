@@ -782,40 +782,31 @@ class Compiler:
         self.compile_node(node[0][1])
         self.compile_node(node[1])
 
-        value = self.frame.pop(ecx)
-        index = self.frame.pop(ebx)
-        obj = self.frame.pop(eax)
+        value = self.frame.peek(-1)
+        index = self.frame.peek(-2)
+        obj   = self.frame.peek(-3)
 
-        @function(c_int, BoxedInt, BoxedInt, BoxedInt)
-        def assign(obj, index, value):
-            print 'stub assign index', obj, index, value
 
-            if index.isInteger():
-                id = index.toInteger()
-            else:
-                assert 'bla blub', False
+        @function(c_int, Value, Value, Value)
+        def index_stub(base, index, v):
+            assert base.isObject()
+            obj = base.toObject()
 
-            if obj.isObject():
-                obj = obj.toObject()
-                if obj.isArray():
-                    array = obj.to(ArrayObject)
-                    if id < array.length:
-                        array.setElement(id, value.value)
+            name = Value(self.rt.toString(BoxedInt(index.raw)).value)
+            str = name.toObject().getString()
 
-            return value.value
+            obj.setProperty(str, v)
 
-        self.box(value, ecx)
-        self.assembler.push(ecx)
-        self.box(index, ebx)
-        self.assembler.push(ebx)
-        self.box(obj, eax)
-        self.assembler.push(eax)
+            return v.raw
 
-        self.assembler.mov(eax, assign)
-        self.assembler.call(eax)
-        self.assembler.add(esp, 12)
+        self.call(index_stub, obj, index, value)
+        reg = self.frame.alloc_reg()
+        self.assembler.mov(reg, eax)
 
-        self.frame.push('unknown', eax)
+        self.frame.pop()
+        self.frame.pop()
+        self.frame.pop()
+        self.frame.push('unknown', reg)
 
     def op_identifier(self, node):
         name = node.value
