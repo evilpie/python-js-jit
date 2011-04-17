@@ -214,7 +214,7 @@ class Compiler:
         def add_property(obj, key, value):
             obj = obj.toObject()
 
-            name = Value(self.rt.toString(BoxedInt(key.raw)).value)
+            name = self.rt.toString(key)
             str = name.toObject().toString()
 
             obj.addProperty(str, value)
@@ -235,6 +235,8 @@ class Compiler:
 
         # the object pointers stays on the stack
 
+    def op_function(self, node):
+        assert 0
 
     def op_this(self, nodes):
 
@@ -392,15 +394,15 @@ class Compiler:
             self.frame.push('int', reg1)
         else:
 
-            @function(c_int, BoxedInt, BoxedInt)
+            @function(c_int, Value, Value)
             def add_stub(lhs, rhs):
                 print 'add stub'
-                return self.rt.add(lhs, rhs).value
+                return self.rt.add(lhs, rhs).raw
 
-            @function(c_int, BoxedInt, BoxedInt)
+            @function(c_int, Value, Value)
             def sub_stub(lhs, rhs):
                 print 'sub stub'
-                return self.rt.sub(lhs, rhs).value
+                return self.rt.sub(lhs, rhs).raw
 
             result = self.frame.alloc_reg()
             types = ['int', 'unknown']
@@ -480,9 +482,9 @@ class Compiler:
 
             return
 
-        @function(c_int, BoxedInt, BoxedInt)
+        @function(c_int, Value, Value)
         def lt(lhs, rhs):
-            matches = self.rt.relational(lhs, rhs, node.type.lower())
+            matches = self.rt.relational(lhs, rhs, True)
             if matches is None:
                 return 0
             else:
@@ -621,10 +623,10 @@ class Compiler:
                     self.compile_node(else_node)
             return
         else:
-            @function(c_int, BoxedInt)
+            @function(c_int, Value)
             def stub_conditional(condition):
                 print 'stub conditional'
-                return self.rt.toBoolean(condition).value
+                return self.rt.toBoolean(condition).raw
 
             test = Label('test')
             stub = Label('stub')
@@ -841,8 +843,8 @@ class Compiler:
             assert base.isObject()
             obj = base.toObject()
 
-            name = Value(self.rt.toString(BoxedInt(index.raw)).value)
-            str = name.toObject().getString()
+            name = self.rt.toString(index)
+            str = name.toObject().toString()
 
             obj.setProperty(str, v)
 
@@ -856,6 +858,33 @@ class Compiler:
         self.frame.pop()
         self.frame.pop()
         self.frame.push('unknown', reg)
+
+    def assign_dot(self, node):
+        self.compile_node(node[0][0])
+        self.compile_node(node[1])
+
+        name = node[0][1].value
+
+        value = self.frame.peek(-1)
+        obj = self.frame.peek(-2)
+
+        @function(c_int, Value, Value)
+        def dot_stub(base,  v):
+            assert base.isObject()
+            obj = base.toObject()
+
+            obj.setProperty(name, v)
+
+            return v.raw
+
+        self.call(dot_stub, obj, value)
+        reg = self.frame.alloc_reg()
+        self.assembler.mov(reg, eax)
+
+        self.frame.pop()
+        self.frame.pop()
+        self.frame.push('unknown', reg)
+
 
     def op_identifier(self, node):
         name = node.value
@@ -896,8 +925,8 @@ class Compiler:
             assert base.isObject()
             obj = base.toObject()
 
-            name = Value(self.rt.toString(BoxedInt(index.raw)).value)
-            str = name.toObject().getString()
+            name = self.rt.toString(index)
+            str = name.toObject().toString()
 
             return obj.getProperty(str).raw
 

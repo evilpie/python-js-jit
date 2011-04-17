@@ -1,5 +1,6 @@
 from data import *
 import math
+from object import Value, Object
 
 ecma_type = dict(undefined = 0, null = 1, boolean = 2, string = 3, number = 4, object = 5)
 
@@ -44,7 +45,7 @@ class Runtime:
             return self.strings['object'] # todo fix for "function"
 
     def type(self, v):
-        if v.isInteger():
+        if v.isInt():
             return ecma_type['number']
         if v.isBoolean():
             return ecma_type['boolean']
@@ -62,36 +63,36 @@ class Runtime:
         return ecma_type['object']
 
     def numberConvert(self, v):
-        if v.isInteger():
-            return v.toInteger()
+        if v.isInt():
+            return v.toInt()
         if v.isObject():
             obj = v.toObject()
             assert obj.isDouble()
 
-            return obj.to(PrimitiveDouble).value
+            return obj.toDouble()
         assert False
 
     def toNumber(self, v):
         if v.isUndefined():
-            return boxed_object(self.doubles['NaN'])
+            return Value.object(self.doubles['NaN'])
         if v.isNull():
-            return boxed_integer(0)
-        if v.isBool():
-            return boxed_integer(0 + v.toBool())
-        if v.isInteger():
+            return Value.int(0)
+        if v.isBoolean():
+            return Value.int(0 + v.toBoolean())
+        if v.isInt():
             return v
         obj = v.toObject()
         if obj.isString():
-            str = obj.to(PrimitiveString).str
+            str = obj.toString()
             try:
                 v = int(str)
-                return boxed_integer(v)
+                return Value.int(v)
             except:
                 try:
                     v = float(str)
-                    return boxed_object(new_float(v))
+                    return Value.object(new_float(v))
                 except:
-                    return boxed_object(self.doubles['NaN'])
+                    return Value.object(self.doubles['NaN'])
 
         if obj.isDouble():
             return v
@@ -105,19 +106,19 @@ class Runtime:
             return Value(Value.false)
         if v.isNull():
             return Value(Value.false)
-        if v.isBool():
+        if v.isBoolean():
             return v
-        if v.isInteger():
-            return Value.boolean(v.toInteger())
+        if v.isInt():
+            return Value.boolean(v.toInt())
 
         obj = v.toObject()
         if obj.isObject():
             return Value(Value.true)
         if obj.isString():
-            return Value.boolean(obj.toPrimitive())
+            return Value.boolean(obj.toString())
 
         assert obj.isDouble()
-        double = obj.toPrimitive()
+        double = obj.toDouble()
         if math.isnan(double):
             return Value(Value.false)
         return Value.boolean(double)
@@ -127,23 +128,23 @@ class Runtime:
             return Value.object(self.strings['undefined'])
         if v.isNull():
             return Value.object(self.strings['null'])
-        if v.isBool():
+        if v.isBoolean():
             return Value.object(self.strings['true'] if v.toBoolean() else self.strings['false'])
-        if v.isInteger():
-            return Value.object(new_string(str(v.toInteger())))
+        if v.isInt():
+            return Value.object(new_string(str(v.toInt())))
 
         assert v.isObject()
         obj = v.toObject()
         if obj.isPrimitive():
             if obj.isDouble():
-                return Value.object(new_string(str(obj.toPrimitive())))
+                return Value.object(new_string(obj.toString()))
             else:
                 return v
 
         raise NotImplementedError('js object to string')
 
     def toPrimitive(self, v, hint=None):
-        if v.isPrimitive():
+        if not v.isObject():
             return v
         obj = v.toObject()
         if obj.isPrimitive():
@@ -237,17 +238,17 @@ class Runtime:
             left = self.toString(left)
             right = self.toString(right)
 
-            lstr = left.toObject().toPrimitive()
-            rstr = right.toObject().toPrimitive()
+            lstr = left.toObject().toString()
+            rstr = right.toObject().toString()
 
-            return boxed_object(new_string(lstr + rstr))
+            return Value.object(new_string(lstr + rstr))
 
 
         left = self.toNumber(left)
         right = self.toNumber(right)
 
         number = self.numberConvert(left) + self.numberConvert(right)
-        return boxed_number(number)
+        return Value(boxed_number(number).value)
 
     def sub(self, left, right):
         left = self.toNumber(left)

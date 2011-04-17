@@ -13,6 +13,9 @@ class Object:
     def __init__(self, pointer):
         self.pointer = pointer
 
+    def isObject(self):
+        return not self.isPrimitive()
+
     def isPrimitive(self):
         return self.getType() <= Object.primitiveTypes['string']
 
@@ -194,6 +197,10 @@ class ObjectFactory:
 
         return Object(addressof(obj))
 
+    @staticmethod
+    def createFunction(context, name, body, parameter):
+        pass
+
 
 class Value(Structure):
     _fields_ = [('raw', c_int)]
@@ -263,6 +270,10 @@ class Value(Structure):
 
     def toObject(self):
         return Object(self.raw >> 1)
+
+    def toBoolean(self):
+        assert self.isBoolean()
+        return True if self.raw == Value.true else False
 
     def setBoolean(self, boolean):
         self.raw = Value.true if boolean else Value.false
